@@ -61,11 +61,11 @@ Target RejectNegative Var(xtensa_windowed_abi, 1)
 Use windowed registers ABI.
 
 malways-memw
-Target Report Mask(ESP32_ALWAYS_MEMBARRIER)
+Target Mask(ESP32_ALWAYS_MEMBARRIER)
 Always emit a MEMW before a load and after a store operation. Used to debug memory coherency issues.
 
 mfix-esp32-psram-cache-issue
-Target Report Mask(ESP32_PSRAM_FIX_ENA)
+Target Mask(ESP32_PSRAM_FIX_ENA)
 Work around a PSRAM cache issue in the ESP32 ECO1 chips.
 
 mfix-esp32-psram-cache-strategy=
