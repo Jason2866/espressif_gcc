@@ -1,5 +1,5 @@
 /* Native CPU detection for aarch64.
-   Copyright (C) 2015-2020 Free Software Foundation, Inc.
+   Copyright (C) 2015-2021 Free Software Foundation, Inc.
 
    This file is part of GCC.
 
@@ -25,9 +25,7 @@
 #include "system.h"
 #include "coretypes.h"
 #include "tm.h"
-
-/* Defined in common/config/aarch64/aarch64-common.c.  */
-std::string aarch64_get_extension_string_for_isa_flags (uint64_t, uint64_t);
+#include "aarch64-protos.h"
 
 struct aarch64_arch_extension
 {

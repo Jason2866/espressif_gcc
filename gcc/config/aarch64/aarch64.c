@@ -1,5 +1,5 @@
 /* Machine description for AArch64 architecture.
-   Copyright (C) 2009-2020 Free Software Foundation, Inc.
+   Copyright (C) 2009-2021 Free Software Foundation, Inc.
    Contributed by ARM Ltd.
 
    This file is part of GCC.
@@ -74,6 +74,8 @@
 #include "intl.h"
 #include "expmed.h"
 #include "function-abi.h"
+#include "gimple-pretty-print.h"
+#include "tree-ssa-loop-niter.h"
 
 /* This file should be included last.  */
 #include "target-def.h"
@@ -362,6 +364,8 @@ static const struct cpu_addrcost_table generic_addrcost_table =
     },
   0, /* pre_modify  */
   0, /* post_modify  */
+  0, /* post_modify_ld3_st3  */
+  0, /* post_modify_ld4_st4  */
   0, /* register_offset  */
   0, /* register_sextend  */
   0, /* register_zextend  */
@@ -378,6 +382,8 @@ static const struct cpu_addrcost_table exynosm1_addrcost_table =
     },
   0, /* pre_modify  */
   0, /* post_modify  */
+  0, /* post_modify_ld3_st3  */
+  0, /* post_modify_ld4_st4  */
   1, /* register_offset  */
   1, /* register_sextend  */
   2, /* register_zextend  */
@@ -394,6 +400,8 @@ static const struct cpu_addrcost_table xgene1_addrcost_table =
     },
   1, /* pre_modify  */
   1, /* post_modify  */
+  1, /* post_modify_ld3_st3  */
+  1, /* post_modify_ld4_st4  */
   0, /* register_offset  */
   1, /* register_sextend  */
   1, /* register_zextend  */
@@ -410,6 +418,8 @@ static const struct cpu_addrcost_table thunderx2t99_addrcost_table =
     },
   0, /* pre_modify  */
   0, /* post_modify  */
+  0, /* post_modify_ld3_st3  */
+  0, /* post_modify_ld4_st4  */
   2, /* register_offset  */
   3, /* register_sextend  */
   3, /* register_zextend  */
@@ -426,6 +436,8 @@ static const struct cpu_addrcost_table thunderx3t110_addrcost_table =
     },
   0, /* pre_modify  */
   0, /* post_modify  */
+  0, /* post_modify_ld3_st3  */
+  0, /* post_modify_ld4_st4  */
   2, /* register_offset  */
   3, /* register_sextend  */
   3, /* register_zextend  */
@@ -442,6 +454,8 @@ static const struct cpu_addrcost_table tsv110_addrcost_table =
     },
   0, /* pre_modify  */
   0, /* post_modify  */
+  0, /* post_modify_ld3_st3  */
+  0, /* post_modify_ld4_st4  */
   0, /* register_offset  */
   1, /* register_sextend  */
   1, /* register_zextend  */
@@ -458,6 +472,8 @@ static const struct cpu_addrcost_table qdf24xx_addrcost_table =
     },
   1, /* pre_modify  */
   1, /* post_modify  */
+  1, /* post_modify_ld3_st3  */
+  1, /* post_modify_ld4_st4  */
   3, /* register_offset  */
   3, /* register_sextend  */
   3, /* register_zextend  */
@@ -474,10 +490,30 @@ static const struct cpu_addrcost_table a64fx_addrcost_table =
     },
   0, /* pre_modify  */
   0, /* post_modify  */
+  0, /* post_modify_ld3_st3  */
+  0, /* post_modify_ld4_st4  */
   2, /* register_offset  */
   3, /* register_sextend  */
   3, /* register_zextend  */
   0, /* imm_offset  */
+};
+
+static const struct cpu_addrcost_table neoversev1_addrcost_table =
+{
+    {
+      1, /* hi  */
+      0, /* si  */
+      0, /* di  */
+      1, /* ti  */
+    },
+  0, /* pre_modify  */
+  0, /* post_modify  */
+  3, /* post_modify_ld3_st3  */
+  3, /* post_modify_ld4_st4  */
+  0, /* register_offset  */
+  0, /* register_sextend  */
+  0, /* register_zextend  */
+  0 /* imm_offset  */
 };
 
 static const struct cpu_regmove_cost generic_regmove_cost =
@@ -585,6 +621,63 @@ static const struct cpu_regmove_cost a64fx_regmove_cost =
   2 /* FP2FP  */
 };
 
+/* Generic costs for Advanced SIMD vector operations.   */
+static const advsimd_vec_cost generic_advsimd_vector_cost =
+{
+  1, /* int_stmt_cost  */
+  1, /* fp_stmt_cost  */
+  0, /* ld2_st2_permute_cost  */
+  0, /* ld3_st3_permute_cost  */
+  0, /* ld4_st4_permute_cost  */
+  2, /* permute_cost  */
+  2, /* reduc_i8_cost  */
+  2, /* reduc_i16_cost  */
+  2, /* reduc_i32_cost  */
+  2, /* reduc_i64_cost  */
+  2, /* reduc_f16_cost  */
+  2, /* reduc_f32_cost  */
+  2, /* reduc_f64_cost  */
+  2, /* store_elt_extra_cost  */
+  2, /* vec_to_scalar_cost  */
+  1, /* scalar_to_vec_cost  */
+  1, /* align_load_cost  */
+  1, /* unalign_load_cost  */
+  1, /* unalign_store_cost  */
+  1  /* store_cost  */
+};
+
+/* Generic costs for SVE vector operations.  */
+static const sve_vec_cost generic_sve_vector_cost =
+{
+  {
+    1, /* int_stmt_cost  */
+    1, /* fp_stmt_cost  */
+    0, /* ld2_st2_permute_cost  */
+    0, /* ld3_st3_permute_cost  */
+    0, /* ld4_st4_permute_cost  */
+    2, /* permute_cost  */
+    2, /* reduc_i8_cost  */
+    2, /* reduc_i16_cost  */
+    2, /* reduc_i32_cost  */
+    2, /* reduc_i64_cost  */
+    2, /* reduc_f16_cost  */
+    2, /* reduc_f32_cost  */
+    2, /* reduc_f64_cost  */
+    2, /* store_elt_extra_cost  */
+    2, /* vec_to_scalar_cost  */
+    1, /* scalar_to_vec_cost  */
+    1, /* align_load_cost  */
+    1, /* unalign_load_cost  */
+    1, /* unalign_store_cost  */
+    1  /* store_cost  */
+  },
+  2, /* clast_cost  */
+  2, /* fadda_f16_cost  */
+  2, /* fadda_f32_cost  */
+  2, /* fadda_f64_cost  */
+  1 /* scatter_store_elt_cost  */
+};
+
 /* Generic costs for vector insn classes.  */
 static const struct cpu_vector_cost generic_vector_cost =
 {
@@ -592,17 +685,103 @@ static const struct cpu_vector_cost generic_vector_cost =
   1, /* scalar_fp_stmt_cost  */
   1, /* scalar_load_cost  */
   1, /* scalar_store_cost  */
-  1, /* vec_int_stmt_cost  */
-  1, /* vec_fp_stmt_cost  */
-  2, /* vec_permute_cost  */
-  2, /* vec_to_scalar_cost  */
-  1, /* scalar_to_vec_cost  */
-  1, /* vec_align_load_cost  */
-  1, /* vec_unalign_load_cost  */
-  1, /* vec_unalign_store_cost  */
-  1, /* vec_store_cost  */
   3, /* cond_taken_branch_cost  */
-  1 /* cond_not_taken_branch_cost  */
+  1, /* cond_not_taken_branch_cost  */
+  &generic_advsimd_vector_cost, /* advsimd  */
+  &generic_sve_vector_cost, /* sve */
+  nullptr /* issue_info  */
+};
+
+static const advsimd_vec_cost a64fx_advsimd_vector_cost =
+{
+  2, /* int_stmt_cost  */
+  5, /* fp_stmt_cost  */
+  0, /* ld2_st2_permute_cost  */
+  0, /* ld3_st3_permute_cost  */
+  0, /* ld4_st4_permute_cost  */
+  3, /* permute_cost  */
+  13, /* reduc_i8_cost  */
+  13, /* reduc_i16_cost  */
+  13, /* reduc_i32_cost  */
+  13, /* reduc_i64_cost  */
+  13, /* reduc_f16_cost  */
+  13, /* reduc_f32_cost  */
+  13, /* reduc_f64_cost  */
+  13, /* store_elt_extra_cost  */
+  13, /* vec_to_scalar_cost  */
+  4, /* scalar_to_vec_cost  */
+  6, /* align_load_cost  */
+  6, /* unalign_load_cost  */
+  1, /* unalign_store_cost  */
+  1  /* store_cost  */
+};
+
+static const sve_vec_cost a64fx_sve_vector_cost =
+{
+  {
+    2, /* int_stmt_cost  */
+    5, /* fp_stmt_cost  */
+    0, /* ld2_st2_permute_cost  */
+    0, /* ld3_st3_permute_cost  */
+    0, /* ld4_st4_permute_cost  */
+    3, /* permute_cost  */
+    13, /* reduc_i8_cost  */
+    13, /* reduc_i16_cost  */
+    13, /* reduc_i32_cost  */
+    13, /* reduc_i64_cost  */
+    13, /* reduc_f16_cost  */
+    13, /* reduc_f32_cost  */
+    13, /* reduc_f64_cost  */
+    13, /* store_elt_extra_cost  */
+    13, /* vec_to_scalar_cost  */
+    4, /* scalar_to_vec_cost  */
+    6, /* align_load_cost  */
+    6, /* unalign_load_cost  */
+    1, /* unalign_store_cost  */
+    1  /* store_cost  */
+  },
+  13, /* clast_cost  */
+  13, /* fadda_f16_cost  */
+  13, /* fadda_f32_cost  */
+  13, /* fadda_f64_cost  */
+  1 /* scatter_store_elt_cost  */
+};
+
+static const struct cpu_vector_cost a64fx_vector_cost =
+{
+  1, /* scalar_int_stmt_cost  */
+  5, /* scalar_fp_stmt_cost  */
+  4, /* scalar_load_cost  */
+  1, /* scalar_store_cost  */
+  3, /* cond_taken_branch_cost  */
+  1, /* cond_not_taken_branch_cost  */
+  &a64fx_advsimd_vector_cost, /* advsimd  */
+  &a64fx_sve_vector_cost, /* sve  */
+  nullptr /* issue_info  */
+};
+
+static const advsimd_vec_cost qdf24xx_advsimd_vector_cost =
+{
+  1, /* int_stmt_cost  */
+  3, /* fp_stmt_cost  */
+  0, /* ld2_st2_permute_cost  */
+  0, /* ld3_st3_permute_cost  */
+  0, /* ld4_st4_permute_cost  */
+  2, /* permute_cost  */
+  1, /* reduc_i8_cost  */
+  1, /* reduc_i16_cost  */
+  1, /* reduc_i32_cost  */
+  1, /* reduc_i64_cost  */
+  1, /* reduc_f16_cost  */
+  1, /* reduc_f32_cost  */
+  1, /* reduc_f64_cost  */
+  1, /* store_elt_extra_cost  */
+  1, /* vec_to_scalar_cost  */
+  1, /* scalar_to_vec_cost  */
+  1, /* align_load_cost  */
+  1, /* unalign_load_cost  */
+  1, /* unalign_store_cost  */
+  1  /* store_cost  */
 };
 
 /* QDF24XX costs for vector insn classes.  */
@@ -612,17 +791,36 @@ static const struct cpu_vector_cost qdf24xx_vector_cost =
   1, /* scalar_fp_stmt_cost  */
   1, /* scalar_load_cost  */
   1, /* scalar_store_cost  */
-  1, /* vec_int_stmt_cost  */
-  3, /* vec_fp_stmt_cost  */
-  2, /* vec_permute_cost  */
-  1, /* vec_to_scalar_cost  */
-  1, /* scalar_to_vec_cost  */
-  1, /* vec_align_load_cost  */
-  1, /* vec_unalign_load_cost  */
-  1, /* vec_unalign_store_cost  */
-  1, /* vec_store_cost  */
   3, /* cond_taken_branch_cost  */
-  1 /* cond_not_taken_branch_cost  */
+  1, /* cond_not_taken_branch_cost  */
+  &qdf24xx_advsimd_vector_cost, /* advsimd  */
+  nullptr, /* sve  */
+  nullptr /* issue_info  */
+};
+
+
+static const advsimd_vec_cost thunderx_advsimd_vector_cost =
+{
+  4, /* int_stmt_cost  */
+  1, /* fp_stmt_cost  */
+  0, /* ld2_st2_permute_cost  */
+  0, /* ld3_st3_permute_cost  */
+  0, /* ld4_st4_permute_cost  */
+  4, /* permute_cost  */
+  2, /* reduc_i8_cost  */
+  2, /* reduc_i16_cost  */
+  2, /* reduc_i32_cost  */
+  2, /* reduc_i64_cost  */
+  2, /* reduc_f16_cost  */
+  2, /* reduc_f32_cost  */
+  2, /* reduc_f64_cost  */
+  2, /* store_elt_extra_cost  */
+  2, /* vec_to_scalar_cost  */
+  2, /* scalar_to_vec_cost  */
+  3, /* align_load_cost  */
+  5, /* unalign_load_cost  */
+  5, /* unalign_store_cost  */
+  1  /* store_cost  */
 };
 
 /* ThunderX costs for vector insn classes.  */
@@ -632,17 +830,35 @@ static const struct cpu_vector_cost thunderx_vector_cost =
   1, /* scalar_fp_stmt_cost  */
   3, /* scalar_load_cost  */
   1, /* scalar_store_cost  */
-  4, /* vec_int_stmt_cost  */
-  1, /* vec_fp_stmt_cost  */
-  4, /* vec_permute_cost  */
-  2, /* vec_to_scalar_cost  */
-  2, /* scalar_to_vec_cost  */
-  3, /* vec_align_load_cost  */
-  5, /* vec_unalign_load_cost  */
-  5, /* vec_unalign_store_cost  */
-  1, /* vec_store_cost  */
   3, /* cond_taken_branch_cost  */
-  3 /* cond_not_taken_branch_cost  */
+  3, /* cond_not_taken_branch_cost  */
+  &thunderx_advsimd_vector_cost, /* advsimd  */
+  nullptr, /* sve  */
+  nullptr /* issue_info  */
+};
+
+static const advsimd_vec_cost tsv110_advsimd_vector_cost =
+{
+  2, /* int_stmt_cost  */
+  2, /* fp_stmt_cost  */
+  0, /* ld2_st2_permute_cost  */
+  0, /* ld3_st3_permute_cost  */
+  0, /* ld4_st4_permute_cost  */
+  2, /* permute_cost  */
+  3, /* reduc_i8_cost  */
+  3, /* reduc_i16_cost  */
+  3, /* reduc_i32_cost  */
+  3, /* reduc_i64_cost  */
+  3, /* reduc_f16_cost  */
+  3, /* reduc_f32_cost  */
+  3, /* reduc_f64_cost  */
+  3, /* store_elt_extra_cost  */
+  3, /* vec_to_scalar_cost  */
+  2, /* scalar_to_vec_cost  */
+  5, /* align_load_cost  */
+  5, /* unalign_load_cost  */
+  1, /* unalign_store_cost  */
+  1  /* store_cost  */
 };
 
 static const struct cpu_vector_cost tsv110_vector_cost =
@@ -651,37 +867,73 @@ static const struct cpu_vector_cost tsv110_vector_cost =
   1, /* scalar_fp_stmt_cost  */
   5, /* scalar_load_cost  */
   1, /* scalar_store_cost  */
-  2, /* vec_int_stmt_cost  */
-  2, /* vec_fp_stmt_cost  */
-  2, /* vec_permute_cost  */
-  3, /* vec_to_scalar_cost  */
-  2, /* scalar_to_vec_cost  */
-  5, /* vec_align_load_cost  */
-  5, /* vec_unalign_load_cost  */
-  1, /* vec_unalign_store_cost  */
-  1, /* vec_store_cost  */
   1, /* cond_taken_branch_cost  */
-  1 /* cond_not_taken_branch_cost  */
+  1, /* cond_not_taken_branch_cost  */
+  &tsv110_advsimd_vector_cost, /* advsimd  */
+  nullptr, /* sve  */
+  nullptr /* issue_info  */
 };
 
-/* Generic costs for vector insn classes.  */
+static const advsimd_vec_cost cortexa57_advsimd_vector_cost =
+{
+  2, /* int_stmt_cost  */
+  2, /* fp_stmt_cost  */
+  0, /* ld2_st2_permute_cost  */
+  0, /* ld3_st3_permute_cost  */
+  0, /* ld4_st4_permute_cost  */
+  3, /* permute_cost  */
+  8, /* reduc_i8_cost  */
+  8, /* reduc_i16_cost  */
+  8, /* reduc_i32_cost  */
+  8, /* reduc_i64_cost  */
+  8, /* reduc_f16_cost  */
+  8, /* reduc_f32_cost  */
+  8, /* reduc_f64_cost  */
+  8, /* store_elt_extra_cost  */
+  8, /* vec_to_scalar_cost  */
+  8, /* scalar_to_vec_cost  */
+  4, /* align_load_cost  */
+  4, /* unalign_load_cost  */
+  1, /* unalign_store_cost  */
+  1  /* store_cost  */
+};
+
+/* Cortex-A57 costs for vector insn classes.  */
 static const struct cpu_vector_cost cortexa57_vector_cost =
 {
   1, /* scalar_int_stmt_cost  */
   1, /* scalar_fp_stmt_cost  */
   4, /* scalar_load_cost  */
   1, /* scalar_store_cost  */
-  2, /* vec_int_stmt_cost  */
-  2, /* vec_fp_stmt_cost  */
-  3, /* vec_permute_cost  */
-  8, /* vec_to_scalar_cost  */
-  8, /* scalar_to_vec_cost  */
-  4, /* vec_align_load_cost  */
-  4, /* vec_unalign_load_cost  */
-  1, /* vec_unalign_store_cost  */
-  1, /* vec_store_cost  */
   1, /* cond_taken_branch_cost  */
-  1 /* cond_not_taken_branch_cost  */
+  1, /* cond_not_taken_branch_cost  */
+  &cortexa57_advsimd_vector_cost, /* advsimd  */
+  nullptr, /* sve  */
+  nullptr /* issue_info  */
+};
+
+static const advsimd_vec_cost exynosm1_advsimd_vector_cost =
+{
+  3, /* int_stmt_cost  */
+  3, /* fp_stmt_cost  */
+  0, /* ld2_st2_permute_cost  */
+  0, /* ld3_st3_permute_cost  */
+  0, /* ld4_st4_permute_cost  */
+  3, /* permute_cost  */
+  3, /* reduc_i8_cost  */
+  3, /* reduc_i16_cost  */
+  3, /* reduc_i32_cost  */
+  3, /* reduc_i64_cost  */
+  3, /* reduc_f16_cost  */
+  3, /* reduc_f32_cost  */
+  3, /* reduc_f64_cost  */
+  3, /* store_elt_extra_cost  */
+  3, /* vec_to_scalar_cost  */
+  3, /* scalar_to_vec_cost  */
+  5, /* align_load_cost  */
+  5, /* unalign_load_cost  */
+  1, /* unalign_store_cost  */
+  1  /* store_cost  */
 };
 
 static const struct cpu_vector_cost exynosm1_vector_cost =
@@ -690,17 +942,35 @@ static const struct cpu_vector_cost exynosm1_vector_cost =
   1, /* scalar_fp_stmt_cost  */
   5, /* scalar_load_cost  */
   1, /* scalar_store_cost  */
-  3, /* vec_int_stmt_cost  */
-  3, /* vec_fp_stmt_cost  */
-  3, /* vec_permute_cost  */
-  3, /* vec_to_scalar_cost  */
-  3, /* scalar_to_vec_cost  */
-  5, /* vec_align_load_cost  */
-  5, /* vec_unalign_load_cost  */
-  1, /* vec_unalign_store_cost  */
-  1, /* vec_store_cost  */
   1, /* cond_taken_branch_cost  */
-  1 /* cond_not_taken_branch_cost  */
+  1, /* cond_not_taken_branch_cost  */
+  &exynosm1_advsimd_vector_cost, /* advsimd  */
+  nullptr, /* sve  */
+  nullptr /* issue_info  */
+};
+
+static const advsimd_vec_cost xgene1_advsimd_vector_cost =
+{
+  2, /* int_stmt_cost  */
+  2, /* fp_stmt_cost  */
+  0, /* ld2_st2_permute_cost  */
+  0, /* ld3_st3_permute_cost  */
+  0, /* ld4_st4_permute_cost  */
+  2, /* permute_cost  */
+  4, /* reduc_i8_cost  */
+  4, /* reduc_i16_cost  */
+  4, /* reduc_i32_cost  */
+  4, /* reduc_i64_cost  */
+  4, /* reduc_f16_cost  */
+  4, /* reduc_f32_cost  */
+  4, /* reduc_f64_cost  */
+  4, /* store_elt_extra_cost  */
+  4, /* vec_to_scalar_cost  */
+  4, /* scalar_to_vec_cost  */
+  10, /* align_load_cost  */
+  10, /* unalign_load_cost  */
+  2, /* unalign_store_cost  */
+  2  /* store_cost  */
 };
 
 /* Generic costs for vector insn classes.  */
@@ -710,17 +980,35 @@ static const struct cpu_vector_cost xgene1_vector_cost =
   1, /* scalar_fp_stmt_cost  */
   5, /* scalar_load_cost  */
   1, /* scalar_store_cost  */
-  2, /* vec_int_stmt_cost  */
-  2, /* vec_fp_stmt_cost  */
-  2, /* vec_permute_cost  */
-  4, /* vec_to_scalar_cost  */
-  4, /* scalar_to_vec_cost  */
-  10, /* vec_align_load_cost  */
-  10, /* vec_unalign_load_cost  */
-  2, /* vec_unalign_store_cost  */
-  2, /* vec_store_cost  */
   2, /* cond_taken_branch_cost  */
-  1 /* cond_not_taken_branch_cost  */
+  1, /* cond_not_taken_branch_cost  */
+  &xgene1_advsimd_vector_cost, /* advsimd  */
+  nullptr, /* sve  */
+  nullptr /* issue_info  */
+};
+
+static const advsimd_vec_cost thunderx2t99_advsimd_vector_cost =
+{
+  4, /* int_stmt_cost  */
+  5, /* fp_stmt_cost  */
+  0, /* ld2_st2_permute_cost  */
+  0, /* ld3_st3_permute_cost  */
+  0, /* ld4_st4_permute_cost  */
+  10, /* permute_cost  */
+  6, /* reduc_i8_cost  */
+  6, /* reduc_i16_cost  */
+  6, /* reduc_i32_cost  */
+  6, /* reduc_i64_cost  */
+  6, /* reduc_f16_cost  */
+  6, /* reduc_f32_cost  */
+  6, /* reduc_f64_cost  */
+  6, /* store_elt_extra_cost  */
+  6, /* vec_to_scalar_cost  */
+  5, /* scalar_to_vec_cost  */
+  4, /* align_load_cost  */
+  4, /* unalign_load_cost  */
+  1, /* unalign_store_cost  */
+  1  /* store_cost  */
 };
 
 /* Costs for vector insn classes for Vulcan.  */
@@ -730,17 +1018,35 @@ static const struct cpu_vector_cost thunderx2t99_vector_cost =
   6, /* scalar_fp_stmt_cost  */
   4, /* scalar_load_cost  */
   1, /* scalar_store_cost  */
-  4, /* vec_int_stmt_cost  */
-  5, /* vec_fp_stmt_cost  */
-  10, /* vec_permute_cost  */
-  6, /* vec_to_scalar_cost  */
-  5, /* scalar_to_vec_cost  */
-  4, /* vec_align_load_cost  */
-  4, /* vec_unalign_load_cost  */
-  1, /* vec_unalign_store_cost  */
-  1, /* vec_store_cost  */
   2, /* cond_taken_branch_cost  */
-  1  /* cond_not_taken_branch_cost  */
+  1,  /* cond_not_taken_branch_cost  */
+  &thunderx2t99_advsimd_vector_cost, /* advsimd  */
+  nullptr, /* sve  */
+  nullptr /* issue_info  */
+};
+
+static const advsimd_vec_cost thunderx3t110_advsimd_vector_cost =
+{
+  5, /* int_stmt_cost  */
+  5, /* fp_stmt_cost  */
+  0, /* ld2_st2_permute_cost  */
+  0, /* ld3_st3_permute_cost  */
+  0, /* ld4_st4_permute_cost  */
+  10, /* permute_cost  */
+  5, /* reduc_i8_cost  */
+  5, /* reduc_i16_cost  */
+  5, /* reduc_i32_cost  */
+  5, /* reduc_i64_cost  */
+  5, /* reduc_f16_cost  */
+  5, /* reduc_f32_cost  */
+  5, /* reduc_f64_cost  */
+  5, /* store_elt_extra_cost  */
+  5, /* vec_to_scalar_cost  */
+  5, /* scalar_to_vec_cost  */
+  4, /* align_load_cost  */
+  4, /* unalign_load_cost  */
+  4, /* unalign_store_cost  */
+  4  /* store_cost  */
 };
 
 static const struct cpu_vector_cost thunderx3t110_vector_cost =
@@ -749,36 +1055,11 @@ static const struct cpu_vector_cost thunderx3t110_vector_cost =
   5, /* scalar_fp_stmt_cost  */
   4, /* scalar_load_cost  */
   1, /* scalar_store_cost  */
-  5, /* vec_int_stmt_cost  */
-  5, /* vec_fp_stmt_cost  */
-  10, /* vec_permute_cost  */
-  5, /* vec_to_scalar_cost  */
-  5, /* scalar_to_vec_cost  */
-  4, /* vec_align_load_cost  */
-  4, /* vec_unalign_load_cost  */
-  4, /* vec_unalign_store_cost  */
-  4, /* vec_store_cost  */
   2, /* cond_taken_branch_cost  */
-  1  /* cond_not_taken_branch_cost  */
-};
-
-static const struct cpu_vector_cost a64fx_vector_cost =
-{
-  1, /* scalar_int_stmt_cost  */
-  5, /* scalar_fp_stmt_cost  */
-  4, /* scalar_load_cost  */
-  1, /* scalar_store_cost  */
-  2, /* vec_int_stmt_cost  */
-  5, /* vec_fp_stmt_cost  */
-  3, /* vec_permute_cost  */
-  13, /* vec_to_scalar_cost  */
-  4, /* scalar_to_vec_cost  */
-  6, /* vec_align_load_cost  */
-  6, /* vec_unalign_load_cost  */
-  1, /* vec_unalign_store_cost  */
-  1, /* vec_store_cost  */
-  3, /* cond_taken_branch_cost  */
-  1 /* cond_not_taken_branch_cost  */
+  1,  /* cond_not_taken_branch_cost  */
+  &thunderx3t110_advsimd_vector_cost, /* advsimd  */
+  nullptr, /* sve  */
+  nullptr /* issue_info  */
 };
 
 
@@ -1360,7 +1641,7 @@ static const struct tune_params thunderx3t110_tunings =
 
 static const struct tune_params neoversen1_tunings =
 {
-  &cortexa57_extra_costs,
+  &cortexa76_extra_costs,
   &generic_addrcost_table,
   &generic_regmove_cost,
   &cortexa57_vector_cost,
@@ -1384,12 +1665,155 @@ static const struct tune_params neoversen1_tunings =
   &generic_prefetch_tune
 };
 
+static const advsimd_vec_cost neoversev1_advsimd_vector_cost =
+{
+  2, /* int_stmt_cost  */
+  2, /* fp_stmt_cost  */
+  4, /* ld2_st2_permute_cost */
+  4, /* ld3_st3_permute_cost  */
+  5, /* ld4_st4_permute_cost  */
+  3, /* permute_cost  */
+  4, /* reduc_i8_cost  */
+  4, /* reduc_i16_cost  */
+  2, /* reduc_i32_cost  */
+  2, /* reduc_i64_cost  */
+  6, /* reduc_f16_cost  */
+  3, /* reduc_f32_cost  */
+  2, /* reduc_f64_cost  */
+  2, /* store_elt_extra_cost  */
+  /* This value is just inherited from the Cortex-A57 table.  */
+  8, /* vec_to_scalar_cost  */
+  /* This depends very much on what the scalar value is and
+     where it comes from.  E.g. some constants take two dependent
+     instructions or a load, while others might be moved from a GPR.
+     4 seems to be a reasonable compromise in practice.  */
+  4, /* scalar_to_vec_cost  */
+  4, /* align_load_cost  */
+  4, /* unalign_load_cost  */
+  /* Although stores have a latency of 2 and compete for the
+     vector pipes, in practice it's better not to model that.  */
+  1, /* unalign_store_cost  */
+  1  /* store_cost  */
+};
+
+static const sve_vec_cost neoversev1_sve_vector_cost =
+{
+  {
+    2, /* int_stmt_cost  */
+    2, /* fp_stmt_cost  */
+    4, /* ld2_st2_permute_cost  */
+    7, /* ld3_st3_permute_cost  */
+    8, /* ld4_st4_permute_cost  */
+    3, /* permute_cost  */
+    /* Theoretically, a reduction involving 31 scalar ADDs could
+       complete in ~9 cycles and would have a cost of 31.  [SU]ADDV
+       completes in 14 cycles, so give it a cost of 31 + 5.  */
+    36, /* reduc_i8_cost  */
+    /* Likewise for 15 scalar ADDs (~5 cycles) vs. 12: 15 + 7.  */
+    22, /* reduc_i16_cost  */
+    /* Likewise for 7 scalar ADDs (~3 cycles) vs. 10: 7 + 7.  */
+    14, /* reduc_i32_cost  */
+    /* Likewise for 3 scalar ADDs (~2 cycles) vs. 10: 3 + 8.  */
+    11, /* reduc_i64_cost  */
+    /* Theoretically, a reduction involving 15 scalar FADDs could
+       complete in ~9 cycles and would have a cost of 30.  FADDV
+       completes in 13 cycles, so give it a cost of 30 + 4.  */
+    34, /* reduc_f16_cost  */
+    /* Likewise for 7 scalar FADDs (~6 cycles) vs. 11: 14 + 5.  */
+    19, /* reduc_f32_cost  */
+    /* Likewise for 3 scalar FADDs (~4 cycles) vs. 9: 6 + 5.  */
+    11, /* reduc_f64_cost  */
+    2, /* store_elt_extra_cost  */
+    /* This value is just inherited from the Cortex-A57 table.  */
+    8, /* vec_to_scalar_cost  */
+    /* See the comment above the Advanced SIMD versions.  */
+    4, /* scalar_to_vec_cost  */
+    4, /* align_load_cost  */
+    4, /* unalign_load_cost  */
+    /* Although stores have a latency of 2 and compete for the
+       vector pipes, in practice it's better not to model that.  */
+    1, /* unalign_store_cost  */
+    1  /* store_cost  */
+  },
+  3, /* clast_cost  */
+  19, /* fadda_f16_cost  */
+  11, /* fadda_f32_cost  */
+  8, /* fadda_f64_cost  */
+  3 /* scatter_store_elt_cost  */
+};
+
+static const aarch64_scalar_vec_issue_info neoversev1_scalar_issue_info =
+{
+  3, /* loads_stores_per_cycle  */
+  2, /* stores_per_cycle  */
+  4, /* general_ops_per_cycle  */
+  0, /* fp_simd_load_general_ops  */
+  1 /* fp_simd_store_general_ops  */
+};
+
+static const aarch64_advsimd_vec_issue_info neoversev1_advsimd_issue_info =
+{
+  {
+    3, /* loads_stores_per_cycle  */
+    2, /* stores_per_cycle  */
+    4, /* general_ops_per_cycle  */
+    0, /* fp_simd_load_general_ops  */
+    1 /* fp_simd_store_general_ops  */
+  },
+  2, /* ld2_st2_general_ops  */
+  2, /* ld3_st3_general_ops  */
+  3 /* ld4_st4_general_ops  */
+};
+
+static const aarch64_sve_vec_issue_info neoversev1_sve_issue_info =
+{
+  {
+    {
+      2, /* loads_per_cycle  */
+      2, /* stores_per_cycle  */
+      2, /* general_ops_per_cycle  */
+      0, /* fp_simd_load_general_ops  */
+      1 /* fp_simd_store_general_ops  */
+    },
+    2, /* ld2_st2_general_ops  */
+    2, /* ld3_st3_general_ops  */
+    3 /* ld4_st4_general_ops  */
+  },
+  1, /* pred_ops_per_cycle  */
+  2, /* while_pred_ops  */
+  2, /* int_cmp_pred_ops  */
+  1, /* fp_cmp_pred_ops  */
+  1, /* gather_scatter_pair_general_ops  */
+  1 /* gather_scatter_pair_pred_ops  */
+};
+
+static const aarch64_vec_issue_info neoversev1_vec_issue_info =
+{
+  &neoversev1_scalar_issue_info,
+  &neoversev1_advsimd_issue_info,
+  &neoversev1_sve_issue_info
+};
+
+/* Neoverse V1 costs for vector insn classes.  */
+static const struct cpu_vector_cost neoversev1_vector_cost =
+{
+  1, /* scalar_int_stmt_cost  */
+  2, /* scalar_fp_stmt_cost  */
+  4, /* scalar_load_cost  */
+  1, /* scalar_store_cost  */
+  1, /* cond_taken_branch_cost  */
+  1, /* cond_not_taken_branch_cost  */
+  &neoversev1_advsimd_vector_cost, /* advsimd  */
+  &neoversev1_sve_vector_cost, /* sve  */
+  &neoversev1_vec_issue_info /* issue_info  */
+};
+
 static const struct tune_params neoversev1_tunings =
 {
-  &cortexa57_extra_costs,
-  &generic_addrcost_table,
+  &cortexa76_extra_costs,
+  &neoversev1_addrcost_table,
   &generic_regmove_cost,
-  &cortexa57_vector_cost,
+  &neoversev1_vector_cost,
   &generic_branch_cost,
   &generic_approx_modes,
   SVE_256, /* sve_width  */
@@ -1406,14 +1830,15 @@ static const struct tune_params neoversev1_tunings =
   2,	/* min_div_recip_mul_df.  */
   0,	/* max_case_values.  */
   tune_params::AUTOPREFETCHER_WEAK,	/* autoprefetcher_model.  */
-  (AARCH64_EXTRA_TUNE_PREFER_ADVSIMD_AUTOVEC
-   | AARCH64_EXTRA_TUNE_CSE_SVE_VL_CONSTANTS),	/* tune_flags.  */
+  (AARCH64_EXTRA_TUNE_CSE_SVE_VL_CONSTANTS
+   | AARCH64_EXTRA_TUNE_USE_NEW_VECTOR_COSTS
+   | AARCH64_EXTRA_TUNE_MATCHED_VECTOR_THROUGHPUT),	/* tune_flags.  */
   &generic_prefetch_tune
 };
 
 static const struct tune_params neoversen2_tunings =
 {
-  &cortexa57_extra_costs,
+  &cortexa76_extra_costs,
   &generic_addrcost_table,
   &generic_regmove_cost,
   &cortexa57_vector_cost,
@@ -1433,7 +1858,7 @@ static const struct tune_params neoversen2_tunings =
   2,	/* min_div_recip_mul_df.  */
   0,	/* max_case_values.  */
   tune_params::AUTOPREFETCHER_WEAK,	/* autoprefetcher_model.  */
-  (AARCH64_EXTRA_TUNE_PREFER_ADVSIMD_AUTOVEC),	/* tune_flags.  */
+  (AARCH64_EXTRA_TUNE_NONE),	/* tune_flags.  */
   &generic_prefetch_tune
 };
 
@@ -1567,7 +1992,7 @@ static const struct attribute_spec aarch64_attribute_table[] =
   { "arm_sve_vector_bits", 1, 1, false, true,  false, true,
 			  aarch64_sve::handle_arm_sve_vector_bits_attribute,
 			  NULL },
-  { "Advanced SIMD type", 0, 0, false, true,  false, true,  NULL, NULL },
+  { "Advanced SIMD type", 1, 1, false, true,  false, true,  NULL, NULL },
   { "SVE type",		  3, 3, false, true,  false, true,  NULL, NULL },
   { "SVE sizeless type",  0, 0, false, true,  false, true,  NULL, NULL },
   { NULL,                 0, 0, false, false, false, false, NULL, NULL }
@@ -2214,6 +2639,14 @@ aarch64_bit_representation (rtx x)
   return x;
 }
 
+/* Return an estimate for the number of quadwords in an SVE vector.  This is
+   equivalent to the number of Advanced SIMD vectors in an SVE vector.  */
+static unsigned int
+aarch64_estimated_sve_vq ()
+{
+  return estimated_poly_value (BITS_PER_SVE_VECTOR) / 128;
+}
+
 /* Return true if MODE is any of the Advanced SIMD structure modes.  */
 static bool
 aarch64_advsimd_struct_mode_p (machine_mode mode)
@@ -2275,6 +2708,9 @@ aarch64_classify_vector_mode (machine_mode mode)
     /* Partial SVE HF vectors.  */
     case E_VNx2HFmode:
     case E_VNx4HFmode:
+    /* Partial SVE BF vectors.  */
+    case E_VNx2BFmode:
+    case E_VNx4BFmode:
     /* Partial SVE SF vector.  */
     case E_VNx2SFmode:
       return TARGET_SVE ? VEC_SVE_DATA | VEC_PARTIAL : 0;
@@ -2935,33 +3371,6 @@ aarch64_is_noplt_call_p (rtx sym)
   return false;
 }
 
-/* Return true if the offsets to a zero/sign-extract operation
-   represent an expression that matches an extend operation.  The
-   operands represent the parameters from
-
-   (extract:MODE (mult (reg) (MULT_IMM)) (EXTRACT_IMM) (const_int 0)).  */
-bool
-aarch64_is_extend_from_extract (scalar_int_mode mode, rtx mult_imm,
-				rtx extract_imm)
-{
-  HOST_WIDE_INT mult_val, extract_val;
-
-  if (! CONST_INT_P (mult_imm) || ! CONST_INT_P (extract_imm))
-    return false;
-
-  mult_val = INTVAL (mult_imm);
-  extract_val = INTVAL (extract_imm);
-
-  if (extract_val > 8
-      && extract_val < GET_MODE_BITSIZE (mode)
-      && exact_log2 (extract_val & ~7) > 0
-      && (extract_val & 7) <= 4
-      && mult_val == (1 << (extract_val & 7)))
-    return true;
-
-  return false;
-}
-
 /* Emit an insn that's a simple single-set.  Both the operands must be
    known to be valid.  */
 inline static rtx_insn *
@@ -3058,7 +3467,7 @@ tls_symbolic_operand_type (rtx addr)
   enum tls_model tls_kind = TLS_MODEL_NONE;
   poly_int64 offset;
   addr = strip_offset_and_salt (addr, &offset);
-  if (GET_CODE (addr) == SYMBOL_REF)
+  if (SYMBOL_REF_P (addr))
     tls_kind = SYMBOL_REF_TLS_MODEL (addr);
 
   return tls_kind;
@@ -3199,7 +3608,7 @@ aarch64_load_symref_appropriately (rtx dest, rtx imm,
 	/* The operand is expected to be MEM.  Whenever the related insn
 	   pattern changed, above code which calculate mem should be
 	   updated.  */
-	gcc_assert (GET_CODE (mem) == MEM);
+	gcc_assert (MEM_P (mem));
 	MEM_READONLY_P (mem) = 1;
 	MEM_NOTRAP_P (mem) = 1;
 	emit_insn (insn);
@@ -3242,7 +3651,7 @@ aarch64_load_symref_appropriately (rtx dest, rtx imm,
 	    mem = XVECEXP (XEXP (SET_SRC (insn), 0), 0, 0);
 	  }
 
-	gcc_assert (GET_CODE (mem) == MEM);
+	gcc_assert (MEM_P (mem));
 	MEM_READONLY_P (mem) = 1;
 	MEM_NOTRAP_P (mem) = 1;
 	emit_insn (insn);
@@ -3523,11 +3932,16 @@ aarch64_split_128bit_move (rtx dst, rtx src)
     }
 }
 
+/* Return true if we should split a move from 128-bit value SRC
+   to 128-bit register DEST.  */
+
 bool
 aarch64_split_128bit_move_p (rtx dst, rtx src)
 {
-  return (! REG_P (src)
-	  || ! (FP_REGNUM_P (REGNO (dst)) && FP_REGNUM_P (REGNO (src))));
+  if (FP_REGNUM_P (REGNO (dst)))
+    return REG_P (src) && !FP_REGNUM_P (REGNO (src));
+  /* All moves to GPRs need to be split.  */
+  return true;
 }
 
 /* Split a complex SIMD combine.  */
@@ -4303,7 +4717,7 @@ aarch64_internal_mov_immediate (rtx dest, rtx imm, bool generate,
 bool
 aarch64_mov128_immediate (rtx imm)
 {
-  if (GET_CODE (imm) == CONST_INT)
+  if (CONST_INT_P (imm))
     return true;
 
   gcc_assert (CONST_WIDE_INT_NUNITS (imm) == 2);
@@ -5221,8 +5635,8 @@ aarch64_expand_mov_immediate (rtx dest, rtx imm)
 
   /* Check on what type of symbol it is.  */
   scalar_int_mode int_mode;
-  if ((GET_CODE (imm) == SYMBOL_REF
-       || GET_CODE (imm) == LABEL_REF
+  if ((SYMBOL_REF_P (imm)
+       || LABEL_REF_P (imm)
        || GET_CODE (imm) == CONST
        || GET_CODE (imm) == CONST_POLY_INT)
       && is_a <scalar_int_mode> (mode, &int_mode))
@@ -5276,8 +5690,11 @@ aarch64_expand_mov_immediate (rtx dest, rtx imm)
       switch (sty)
 	{
 	case SYMBOL_FORCE_TO_MEM:
+	  if (int_mode != ptr_mode)
+	    imm = convert_memory_address (ptr_mode, imm);
+
 	  if (const_offset != 0
-	      && targetm.cannot_force_const_mem (int_mode, imm))
+	      && targetm.cannot_force_const_mem (ptr_mode, imm))
 	    {
 	      gcc_assert (can_create_pseudo_p ());
 	      base = aarch64_force_temporary (int_mode, dest, base);
@@ -5920,9 +6337,9 @@ aarch64_vfp_is_call_candidate (cumulative_args_t pcum_v, machine_mode mode,
 
 static unsigned int
 aarch64_function_arg_alignment (machine_mode mode, const_tree type,
-				bool *abi_break)
+				unsigned int *abi_break)
 {
-  *abi_break = false;
+  *abi_break = 0;
   if (!type)
     return GET_MODE_ALIGNMENT (mode);
 
@@ -5964,7 +6381,7 @@ aarch64_function_arg_alignment (machine_mode mode, const_tree type,
 
   if (bitfield_alignment > alignment)
     {
-      *abi_break = true;
+      *abi_break = alignment;
       return bitfield_alignment;
     }
 
@@ -5986,7 +6403,7 @@ aarch64_layout_arg (cumulative_args_t pcum_v, const function_arg_info &arg)
   int ncrn, nvrn, nregs;
   bool allocate_ncrn, allocate_nvrn;
   HOST_WIDE_INT size;
-  bool abi_break;
+  unsigned int abi_break;
 
   /* We need to do this once per argument.  */
   if (pcum->aapcs_arg_processed)
@@ -6240,7 +6657,6 @@ aarch64_init_cumulative_args (CUMULATIVE_ARGS *pcum,
 
   if (!silent_p
       && !TARGET_FLOAT
-      && fndecl && TREE_PUBLIC (fndecl)
       && fntype && fntype != error_mark_node)
     {
       const_tree type = TREE_TYPE (fntype);
@@ -6305,14 +6721,19 @@ aarch64_function_arg_regno_p (unsigned regno)
 static unsigned int
 aarch64_function_arg_boundary (machine_mode mode, const_tree type)
 {
-  bool abi_break;
+  unsigned int abi_break;
   unsigned int alignment = aarch64_function_arg_alignment (mode, type,
 							   &abi_break);
+  alignment = MIN (MAX (alignment, PARM_BOUNDARY), STACK_BOUNDARY);
   if (abi_break & warn_psabi)
-    inform (input_location, "parameter passing for argument of type "
-	    "%qT changed in GCC 9.1", type);
+    {
+      abi_break = MIN (MAX (abi_break, PARM_BOUNDARY), STACK_BOUNDARY);
+      if (alignment != abi_break)
+	inform (input_location, "parameter passing for argument of type "
+		"%qT changed in GCC 9.1", type);
+    }
 
-  return MIN (MAX (alignment, PARM_BOUNDARY), STACK_BOUNDARY);
+  return alignment;
 }
 
 /* Implement TARGET_GET_RAW_RESULT_MODE and TARGET_GET_RAW_ARG_MODE.  */
@@ -6424,10 +6845,6 @@ aarch64_libgcc_cmp_return_mode (void)
 #error Cannot use simple address calculation for stack probing
 #endif
 
-/* The pair of scratch registers used for stack probing.  */
-#define PROBE_STACK_FIRST_REG  R9_REGNUM
-#define PROBE_STACK_SECOND_REG R10_REGNUM
-
 /* Emit code to probe a range of stack addresses from FIRST to FIRST+POLY_SIZE,
    inclusive.  These are offsets from the current stack pointer.  */
 
@@ -6441,7 +6858,7 @@ aarch64_emit_probe_stack_range (HOST_WIDE_INT first, poly_int64 poly_size)
       return;
     }
 
-  rtx reg1 = gen_rtx_REG (Pmode, PROBE_STACK_FIRST_REG);
+  rtx reg1 = gen_rtx_REG (Pmode, PROBE_STACK_FIRST_REGNUM);
 
   /* See the same assertion on PROBE_INTERVAL above.  */
   gcc_assert ((first % ARITH_FACTOR) == 0);
@@ -6499,7 +6916,7 @@ aarch64_emit_probe_stack_range (HOST_WIDE_INT first, poly_int64 poly_size)
      equality test for the loop condition.  */
   else
     {
-      rtx reg2 = gen_rtx_REG (Pmode, PROBE_STACK_SECOND_REG);
+      rtx reg2 = gen_rtx_REG (Pmode, PROBE_STACK_SECOND_REGNUM);
 
       /* Step 1: round SIZE to the previous multiple of the interval.  */
 
@@ -6792,7 +7209,9 @@ aarch64_layout_frame (void)
 	&& !crtl->abi->clobbers_full_reg_p (regno))
       frame.reg_offset[regno] = SLOT_REQUIRED;
 
-  /* With stack-clash, LR must be saved in non-leaf functions.  */
+  /* With stack-clash, LR must be saved in non-leaf functions.  The saving of
+     LR counts as an implicit probe which allows us to maintain the invariant
+     described in the comment at expand_prologue.  */
   gcc_assert (crtl->is_leaf
 	      || maybe_ne (frame.reg_offset[R30_REGNUM], SLOT_NOT_REQUIRED));
 
@@ -7010,6 +7429,14 @@ aarch64_layout_frame (void)
 			+ frame.sve_callee_adjust
 			+ frame.final_adjust, frame.frame_size));
 
+  if (!frame.emit_frame_chain && frame.callee_adjust == 0)
+    {
+      /* We've decided not to associate any register saves with the initial
+	 stack allocation.  */
+      frame.wb_candidate1 = INVALID_REGNUM;
+      frame.wb_candidate2 = INVALID_REGNUM;
+    }
+
   frame.laid_out = true;
 }
 
@@ -7170,6 +7597,12 @@ aarch64_gen_store_pair (machine_mode mode, rtx mem1, rtx reg1, rtx mem2,
     case E_TFmode:
       return gen_store_pair_dw_tftf (mem1, reg1, mem2, reg2);
 
+    case E_V4SImode:
+      return gen_vec_store_pairv4siv4si (mem1, reg1, mem2, reg2);
+
+    case E_V16QImode:
+      return gen_vec_store_pairv16qiv16qi (mem1, reg1, mem2, reg2);
+
     default:
       gcc_unreachable ();
     }
@@ -7192,6 +7625,9 @@ aarch64_gen_load_pair (machine_mode mode, rtx reg1, rtx mem1, rtx reg2,
 
     case E_TFmode:
       return gen_load_pair_dw_tftf (reg1, mem1, reg2, mem2);
+
+    case E_V4SImode:
+      return gen_load_pairv4siv4si (reg1, mem1, reg2, mem2);
 
     default:
       gcc_unreachable ();
@@ -7474,7 +7910,18 @@ offset_4bit_signed_scaled_p (machine_mode mode, poly_int64 offset)
 	  && IN_RANGE (multiple, -8, 7));
 }
 
-/* Return true if OFFSET is a unsigned 6-bit value multiplied by the size
+/* Return true if OFFSET is a signed 6-bit value multiplied by the size
+   of MODE.  */
+
+static inline bool
+offset_6bit_signed_scaled_p (machine_mode mode, poly_int64 offset)
+{
+  HOST_WIDE_INT multiple;
+  return (constant_multiple_p (offset, GET_MODE_SIZE (mode), &multiple)
+	  && IN_RANGE (multiple, -32, 31));
+}
+
+/* Return true if OFFSET is an unsigned 6-bit value multiplied by the size
    of MODE.  */
 
 static inline bool
@@ -8452,6 +8899,10 @@ aarch64_expand_epilogue (bool for_sibcall)
   if (callee_adjust != 0)
     aarch64_pop_regs (reg1, reg2, callee_adjust, &cfi_ops);
 
+  /* If we have no register restore information, the CFA must have been
+     defined in terms of the stack pointer since the end of the prologue.  */
+  gcc_assert (cfi_ops || !frame_pointer_needed);
+
   if (cfi_ops && (callee_adjust != 0 || maybe_gt (initial_adjust, 65536)))
     {
       /* Emit delayed restores and set the CFA to be SP + initial_adjust.  */
@@ -8666,7 +9117,7 @@ aarch64_tls_referenced_p (rtx x)
   FOR_EACH_SUBRTX (iter, array, x, ALL)
     {
       const_rtx x = *iter;
-      if (GET_CODE (x) == SYMBOL_REF && SYMBOL_REF_TLS_MODEL (x) != 0)
+      if (SYMBOL_REF_P (x) && SYMBOL_REF_TLS_MODEL (x) != 0)
 	return true;
       /* Don't recurse into UNSPEC_TLS looking for TLS symbols; these are
 	 TLS offsets, not real symbol references.  */
@@ -8892,7 +9343,7 @@ aarch64_cannot_force_const_mem (machine_mode mode ATTRIBUTE_UNUSED, rtx x)
 
   poly_int64 offset;
   rtx base = strip_offset_and_salt (x, &offset);
-  if (GET_CODE (base) == SYMBOL_REF || GET_CODE (base) == LABEL_REF)
+  if (SYMBOL_REF_P (base) || LABEL_REF_P (base))
     {
       /* We checked for POLY_INT_CST offsets above.  */
       if (aarch64_classify_symbol (base, offset.to_constant ())
@@ -8978,7 +9429,7 @@ static bool
 aarch64_base_register_rtx_p (rtx x, bool strict_p)
 {
   if (!strict_p
-      && GET_CODE (x) == SUBREG
+      && SUBREG_P (x)
       && contains_reg_of_mode[GENERAL_REGS][GET_MODE (SUBREG_REG (x))])
     x = SUBREG_REG (x);
 
@@ -8997,7 +9448,7 @@ aarch64_classify_index (struct aarch64_address_info *info, rtx x,
   int shift;
 
   /* (reg:P) */
-  if ((REG_P (x) || GET_CODE (x) == SUBREG)
+  if ((REG_P (x) || SUBREG_P (x))
       && GET_MODE (x) == Pmode)
     {
       type = ADDRESS_REG_REG;
@@ -9041,22 +9492,6 @@ aarch64_classify_index (struct aarch64_address_info *info, rtx x,
       index = XEXP (XEXP (x, 0), 0);
       shift = INTVAL (XEXP (x, 1));
     }
-  /* (sign_extract:DI (mult:DI (reg:DI) (const_int scale)) 32+shift 0) */
-  else if ((GET_CODE (x) == SIGN_EXTRACT
-	    || GET_CODE (x) == ZERO_EXTRACT)
-	   && GET_MODE (x) == DImode
-	   && GET_CODE (XEXP (x, 0)) == MULT
-	   && GET_MODE (XEXP (XEXP (x, 0), 0)) == DImode
-	   && CONST_INT_P (XEXP (XEXP (x, 0), 1)))
-    {
-      type = (GET_CODE (x) == SIGN_EXTRACT)
-	? ADDRESS_REG_SXTW : ADDRESS_REG_UXTW;
-      index = XEXP (XEXP (x, 0), 0);
-      shift = exact_log2 (INTVAL (XEXP (XEXP (x, 0), 1)));
-      if (INTVAL (XEXP (x, 1)) != 32 + shift
-	  || INTVAL (XEXP (x, 2)) != 0)
-	shift = -1;
-    }
   /* (and:DI (mult:DI (reg:DI) (const_int scale))
      (const_int 0xffffffff<<shift)) */
   else if (GET_CODE (x) == AND
@@ -9070,22 +9505,6 @@ aarch64_classify_index (struct aarch64_address_info *info, rtx x,
       index = XEXP (XEXP (x, 0), 0);
       shift = exact_log2 (INTVAL (XEXP (XEXP (x, 0), 1)));
       if (INTVAL (XEXP (x, 1)) != (HOST_WIDE_INT)0xffffffff << shift)
-	shift = -1;
-    }
-  /* (sign_extract:DI (ashift:DI (reg:DI) (const_int shift)) 32+shift 0) */
-  else if ((GET_CODE (x) == SIGN_EXTRACT
-	    || GET_CODE (x) == ZERO_EXTRACT)
-	   && GET_MODE (x) == DImode
-	   && GET_CODE (XEXP (x, 0)) == ASHIFT
-	   && GET_MODE (XEXP (XEXP (x, 0), 0)) == DImode
-	   && CONST_INT_P (XEXP (XEXP (x, 0), 1)))
-    {
-      type = (GET_CODE (x) == SIGN_EXTRACT)
-	? ADDRESS_REG_SXTW : ADDRESS_REG_UXTW;
-      index = XEXP (XEXP (x, 0), 0);
-      shift = INTVAL (XEXP (XEXP (x, 0), 1));
-      if (INTVAL (XEXP (x, 1)) != 32 + shift
-	  || INTVAL (XEXP (x, 2)) != 0)
 	shift = -1;
     }
   /* (and:DI (ashift:DI (reg:DI) (const_int shift))
@@ -9127,7 +9546,7 @@ aarch64_classify_index (struct aarch64_address_info *info, rtx x,
     return false;
 
   if (!strict_p
-      && GET_CODE (index) == SUBREG
+      && SUBREG_P (index)
       && contains_reg_of_mode[GENERAL_REGS][GET_MODE (SUBREG_REG (index))])
     index = SUBREG_REG (index);
 
@@ -9423,8 +9842,8 @@ aarch64_classify_address (struct aarch64_address_info *info,
 	{
 	  poly_int64 offset;
 	  rtx sym = strip_offset_and_salt (x, &offset);
-	  return ((GET_CODE (sym) == LABEL_REF
-		   || (GET_CODE (sym) == SYMBOL_REF
+	  return ((LABEL_REF_P (sym)
+		   || (SYMBOL_REF_P (sym)
 		       && CONSTANT_POOL_ADDRESS_P (sym)
 		       && aarch64_pcrelative_literal_loads)));
 	}
@@ -9440,7 +9859,7 @@ aarch64_classify_address (struct aarch64_address_info *info,
 	  poly_int64 offset;
 	  HOST_WIDE_INT const_offset;
 	  rtx sym = strip_offset_and_salt (info->offset, &offset);
-	  if (GET_CODE (sym) == SYMBOL_REF
+	  if (SYMBOL_REF_P (sym)
 	      && offset.is_constant (&const_offset)
 	      && (aarch64_classify_symbol (sym, const_offset)
 		  == SYMBOL_SMALL_ABSOLUTE))
@@ -9502,7 +9921,7 @@ aarch64_symbolic_address_p (rtx x)
 {
   poly_int64 offset;
   x = strip_offset_and_salt (x, &offset);
-  return GET_CODE (x) == SYMBOL_REF || GET_CODE (x) == LABEL_REF;
+  return SYMBOL_REF_P (x) || LABEL_REF_P (x);
 }
 
 /* Classify the base of symbolic expression X.  */
@@ -9627,7 +10046,7 @@ aarch64_reinterpret_float_as_int (rtx value, unsigned HOST_WIDE_INT *intval)
     }
 
   scalar_float_mode mode;
-  if (GET_CODE (value) != CONST_DOUBLE
+  if (!CONST_DOUBLE_P (value)
       || !is_a <scalar_float_mode> (GET_MODE (value), &mode)
       || GET_MODE_BITSIZE (mode) > HOST_BITS_PER_WIDE_INT
       /* Only support up to DF mode.  */
@@ -9667,7 +10086,7 @@ aarch64_float_const_rtx_p (rtx x)
      mov/movk pairs over ldr/adrp pairs.  */
   unsigned HOST_WIDE_INT ival;
 
-  if (GET_CODE (x) == CONST_DOUBLE
+  if (CONST_DOUBLE_P (x)
       && SCALAR_FLOAT_MODE_P (mode)
       && aarch64_reinterpret_float_as_int (x, &ival))
     {
@@ -9706,7 +10125,7 @@ aarch64_can_const_movi_rtx_p (rtx x, machine_mode mode)
   scalar_int_mode imode;
   unsigned HOST_WIDE_INT ival;
 
-  if (GET_CODE (x) == CONST_DOUBLE
+  if (CONST_DOUBLE_P (x)
       && SCALAR_FLOAT_MODE_P (mode))
     {
       if (!aarch64_reinterpret_float_as_int (x, &ival))
@@ -9718,7 +10137,7 @@ aarch64_can_const_movi_rtx_p (rtx x, machine_mode mode)
 
       imode = int_mode_for_mode (mode).require ();
     }
-  else if (GET_CODE (x) == CONST_INT
+  else if (CONST_INT_P (x)
 	   && is_a <scalar_int_mode> (mode, &imode))
     ival = INTVAL (x);
   else
@@ -9869,7 +10288,7 @@ aarch64_select_cc_mode (RTX_CODE code, rtx x, rtx y)
      the comparison will have to be swapped when we emit the assembly
      code.  */
   if ((mode_x == SImode || mode_x == DImode)
-      && (REG_P (y) || GET_CODE (y) == SUBREG || y == const0_rtx)
+      && (REG_P (y) || SUBREG_P (y) || y == const0_rtx)
       && (code_x == ASHIFT || code_x == ASHIFTRT
 	  || code_x == LSHIFTRT
 	  || code_x == ZERO_EXTEND || code_x == SIGN_EXTEND))
@@ -9878,7 +10297,7 @@ aarch64_select_cc_mode (RTX_CODE code, rtx x, rtx y)
   /* Similarly for a negated operand, but we can only do this for
      equalities.  */
   if ((mode_x == SImode || mode_x == DImode)
-      && (REG_P (y) || GET_CODE (y) == SUBREG)
+      && (REG_P (y) || SUBREG_P (y))
       && (code == EQ || code == NE)
       && code_x == NEG)
     return CC_Zmode;
@@ -10359,7 +10778,7 @@ aarch64_print_operand (FILE *f, rtx x, int code)
 	}
 
       if (GET_MODE_CLASS (GET_MODE (x)) == MODE_VECTOR_INT)
-	asm_fprintf (f, "%wd", -INTVAL (elt));
+	asm_fprintf (f, "%wd", (HOST_WIDE_INT) -UINTVAL (elt));
       else if (GET_MODE_CLASS (GET_MODE (x)) == MODE_VECTOR_FLOAT
 	       && aarch64_print_vector_float_operand (f, x, true))
 	;
@@ -10672,7 +11091,7 @@ aarch64_print_operand (FILE *f, rtx x, int code)
       {
 	machine_mode mode = GET_MODE (x);
 
-	if (GET_CODE (x) != MEM
+	if (!MEM_P (x)
 	    || (code == 'y' && maybe_ne (GET_MODE_SIZE (mode), 16)))
 	  {
 	    output_operand_lossage ("invalid operand for '%%%c'", code);
@@ -10835,7 +11254,7 @@ aarch64_label_mentioned_p (rtx x)
   const char *fmt;
   int i;
 
-  if (GET_CODE (x) == LABEL_REF)
+  if (LABEL_REF_P (x))
     return true;
 
   /* UNSPEC_TLS entries for a symbol include a LABEL_REF for the
@@ -11017,7 +11436,7 @@ aarch64_secondary_reload (bool in_p ATTRIBUTE_UNUSED, rtx x,
 
   /* If we have to disable direct literal pool loads and stores because the
      function is too big, then we need a scratch register.  */
-  if (MEM_P (x) && GET_CODE (x) == SYMBOL_REF && CONSTANT_POOL_ADDRESS_P (x)
+  if (MEM_P (x) && SYMBOL_REF_P (x) && CONSTANT_POOL_ADDRESS_P (x)
       && (SCALAR_FLOAT_MODE_P (GET_MODE (x))
 	  || targetm.vector_mode_supported_p (GET_MODE (x)))
       && !aarch64_pcrelative_literal_loads)
@@ -11113,31 +11532,23 @@ aarch64_return_addr (int count, rtx frame ATTRIBUTE_UNUSED)
   return aarch64_return_addr_rtx ();
 }
 
-
 static void
 aarch64_asm_trampoline_template (FILE *f)
 {
-  int offset1 = 24;
-  int offset2 = 28;
-
-  if (aarch64_bti_enabled ())
-    {
-      asm_fprintf (f, "\thint\t34 // bti c\n");
-      offset1 -= 4;
-      offset2 -= 4;
-    }
+  /* Even if the current function doesn't have branch protection, some
+     later function might, so since this template is only generated once
+     we have to add a BTI just in case. */
+  asm_fprintf (f, "\thint\t34 // bti c\n");
 
   if (TARGET_ILP32)
     {
-      asm_fprintf (f, "\tldr\tw%d, .+%d\n", IP1_REGNUM - R0_REGNUM, offset1);
-      asm_fprintf (f, "\tldr\tw%d, .+%d\n", STATIC_CHAIN_REGNUM - R0_REGNUM,
-		   offset1);
+      asm_fprintf (f, "\tldr\tw%d, .+20\n", IP1_REGNUM - R0_REGNUM);
+      asm_fprintf (f, "\tldr\tw%d, .+20\n", STATIC_CHAIN_REGNUM - R0_REGNUM);
     }
   else
     {
-      asm_fprintf (f, "\tldr\t%s, .+%d\n", reg_names [IP1_REGNUM], offset1);
-      asm_fprintf (f, "\tldr\t%s, .+%d\n", reg_names [STATIC_CHAIN_REGNUM],
-		   offset2);
+      asm_fprintf (f, "\tldr\t%s, .+20\n", reg_names [IP1_REGNUM]);
+      asm_fprintf (f, "\tldr\t%s, .+24\n", reg_names [STATIC_CHAIN_REGNUM]);
     }
   asm_fprintf (f, "\tbr\t%s\n", reg_names [IP1_REGNUM]);
 
@@ -11151,12 +11562,6 @@ aarch64_asm_trampoline_template (FILE *f)
      speculation or not, but such function specific attributes are likely to
      happen in the future.  */
   asm_fprintf (f, "\tdsb\tsy\n\tisb\n");
-
-  /* The trampoline needs an extra padding instruction.  In case if BTI is
-     enabled the padding instruction is replaced by the BTI instruction at
-     the beginning.  */
-  if (!aarch64_bti_enabled ())
-    assemble_aligned_integer (4, const0_rtx);
 
   assemble_aligned_integer (POINTER_BYTES, const0_rtx);
   assemble_aligned_integer (POINTER_BYTES, const0_rtx);
@@ -11187,10 +11592,10 @@ aarch64_trampoline_init (rtx m_tramp, tree fndecl, rtx chain_value)
   /* XXX We should really define a "clear_cache" pattern and use
      gen_clear_cache().  */
   a_tramp = XEXP (m_tramp, 0);
-  emit_library_call (gen_rtx_SYMBOL_REF (Pmode, "__clear_cache"),
-		     LCT_NORMAL, VOIDmode, a_tramp, ptr_mode,
-		     plus_constant (ptr_mode, a_tramp, TRAMPOLINE_SIZE),
-		     ptr_mode);
+  maybe_emit_call_builtin___clear_cache (a_tramp,
+					 plus_constant (ptr_mode,
+							a_tramp,
+							TRAMPOLINE_SIZE));
 }
 
 static unsigned char
@@ -11262,7 +11667,7 @@ aarch64_preferred_reload_class (rtx x, reg_class_t regclass)
       rtx lhs = XEXP (x, 0);
 
       /* Look through a possible SUBREG introduced by ILP32.  */
-      if (GET_CODE (lhs) == SUBREG)
+      if (SUBREG_P (lhs))
 	lhs = SUBREG_REG (lhs);
 
       gcc_assert (REG_P (lhs));
@@ -11479,16 +11884,6 @@ aarch64_strip_extend (rtx x, bool strip_shift)
   if (!is_a <scalar_int_mode> (GET_MODE (op), &mode))
     return op;
 
-  /* Zero and sign extraction of a widened value.  */
-  if ((GET_CODE (op) == ZERO_EXTRACT || GET_CODE (op) == SIGN_EXTRACT)
-      && XEXP (op, 2) == const0_rtx
-      && GET_CODE (XEXP (op, 0)) == MULT
-      && aarch64_is_extend_from_extract (mode, XEXP (XEXP (op, 0), 1),
-					 XEXP (op, 1)))
-    return XEXP (XEXP (op, 0), 0);
-
-  /* It can also be represented (for zero-extend) as an AND with an
-     immediate.  */
   if (GET_CODE (op) == AND
       && GET_CODE (XEXP (op, 0)) == MULT
       && CONST_INT_P (XEXP (XEXP (op, 0), 1))
@@ -11578,7 +11973,33 @@ aarch64_rtx_mult_cost (rtx x, enum rtx_code code, int outer, bool speed)
   op1 = XEXP (x, 1);
 
   if (VECTOR_MODE_P (mode))
-    mode = GET_MODE_INNER (mode);
+    {
+      unsigned int vec_flags = aarch64_classify_vector_mode (mode);
+      if (vec_flags & VEC_ADVSIMD)
+	{
+	  /* The by-element versions of the instruction have the same costs as
+	     the normal 3-vector version.  So don't add the costs of the
+	     duplicate into the costs of the multiply.  We make an assumption
+	     that the input to the VEC_DUPLICATE is already on the FP & SIMD
+	     side.  This means costing of a MUL by element pre RA is a bit
+	     optimistic.  */
+	  if (GET_CODE (op0) == VEC_DUPLICATE)
+	    op0 = XEXP (op0, 0);
+	  else if (GET_CODE (op1) == VEC_DUPLICATE)
+	    op1 = XEXP (op1, 0);
+	}
+      cost += rtx_cost (op0, mode, MULT, 0, speed);
+      cost += rtx_cost (op1, mode, MULT, 1, speed);
+      if (speed)
+	{
+	  if (GET_CODE (x) == MULT)
+	    cost += extra_cost->vect.mult;
+	  /* This is to catch the SSRA costing currently flowing here.  */
+	  else
+	    cost += extra_cost->vect.alu;
+	}
+      return cost;
+    }
 
   /* Integer multiply/fma.  */
   if (GET_MODE_CLASS (mode) == MODE_INT)
@@ -11716,7 +12137,7 @@ aarch64_address_cost (rtx x,
 
   if (!aarch64_classify_address (&info, x, mode, false))
     {
-      if (GET_CODE (x) == CONST || GET_CODE (x) == SYMBOL_REF)
+      if (GET_CODE (x) == CONST || SYMBOL_REF_P (x))
 	{
 	  /* This is a CONST or SYMBOL ref which will be split
 	     in a different way depending on the code model in use.
@@ -11749,7 +12170,14 @@ aarch64_address_cost (rtx x,
 	if (c == PRE_INC || c == PRE_DEC || c == PRE_MODIFY)
 	  cost += addr_cost->pre_modify;
 	else if (c == POST_INC || c == POST_DEC || c == POST_MODIFY)
-	  cost += addr_cost->post_modify;
+	  {
+	    if (mode == CImode)
+	      cost += addr_cost->post_modify_ld3_st3;
+	    else if (mode == XImode)
+	      cost += addr_cost->post_modify_ld4_st4;
+	    else
+	      cost += addr_cost->post_modify;
+	  }
 	else
 	  gcc_unreachable ();
 
@@ -11807,35 +12235,15 @@ aarch64_branch_cost (bool speed_p, bool predictable_p)
     return branch_costs->unpredictable;
 }
 
-/* Return true if the RTX X in mode MODE is a zero or sign extract
+/* Return true if X is a zero or sign extract
    usable in an ADD or SUB (extended register) instruction.  */
 static bool
-aarch64_rtx_arith_op_extract_p (rtx x, scalar_int_mode mode)
+aarch64_rtx_arith_op_extract_p (rtx x)
 {
-  /* Catch add with a sign extract.
-     This is add_<optab><mode>_multp2.  */
-  if (GET_CODE (x) == SIGN_EXTRACT
-      || GET_CODE (x) == ZERO_EXTRACT)
-    {
-      rtx op0 = XEXP (x, 0);
-      rtx op1 = XEXP (x, 1);
-      rtx op2 = XEXP (x, 2);
-
-      if (GET_CODE (op0) == MULT
-	  && CONST_INT_P (op1)
-	  && op2 == const0_rtx
-	  && CONST_INT_P (XEXP (op0, 1))
-	  && aarch64_is_extend_from_extract (mode,
-					     XEXP (op0, 1),
-					     op1))
-	{
-	  return true;
-	}
-    }
   /* The simple case <ARITH>, XD, XN, XM, [us]xt.
      No shift.  */
-  else if (GET_CODE (x) == SIGN_EXTEND
-	   || GET_CODE (x) == ZERO_EXTEND)
+  if (GET_CODE (x) == SIGN_EXTEND
+      || GET_CODE (x) == ZERO_EXTEND)
     return REG_P (XEXP (x, 0));
 
   return false;
@@ -11983,8 +12391,6 @@ aarch64_if_then_else_costs (rtx op0, rtx op1, rtx op2, int *cost, bool speed)
 	  if (speed)
 	    {
 	      machine_mode mode = GET_MODE (XEXP (op1, 0));
-	      const struct cpu_cost_table *extra_cost
-		= aarch64_tune_params.insn_extra_cost;
 
 	      if (GET_MODE_CLASS (mode) == MODE_INT)
 		*cost += extra_cost->alu.arith;
@@ -12007,6 +12413,13 @@ aarch64_if_then_else_costs (rtx op0, rtx op1, rtx op2, int *cost, bool speed)
 	  /* CSEL with zero-extension (*cmovdi_insn_uxtw).  */
 	  op1 = XEXP (op1, 0);
 	  op2 = XEXP (op2, 0);
+	}
+      else if (GET_CODE (op1) == ZERO_EXTEND && op2 == const0_rtx)
+	{
+	  inner = XEXP (op1, 0);
+	  if (GET_CODE (inner) == NEG || GET_CODE (inner) == NOT)
+	    /* CSINV/NEG with zero extend + const 0 (*csinv3_uxtw_insn3).  */
+	    op1 = XEXP (inner, 0);
 	}
 
       *cost += rtx_cost (op1, VOIDmode, IF_THEN_ELSE, 1, speed);
@@ -12518,8 +12931,8 @@ cost_minus:
 	  }
 
 	/* Look for SUB (extended register).  */
-	if (is_a <scalar_int_mode> (mode, &int_mode)
-	    && aarch64_rtx_arith_op_extract_p (op1, int_mode))
+	if (is_a <scalar_int_mode> (mode)
+	    && aarch64_rtx_arith_op_extract_p (op1))
 	  {
 	    if (speed)
 	      *cost += extra_cost->alu.extend_arith;
@@ -12608,8 +13021,8 @@ cost_plus:
 	*cost += rtx_cost (op1, mode, PLUS, 1, speed);
 
 	/* Look for ADD (extended register).  */
-	if (is_a <scalar_int_mode> (mode, &int_mode)
-	    && aarch64_rtx_arith_op_extract_p (op0, int_mode))
+	if (is_a <scalar_int_mode> (mode)
+	    && aarch64_rtx_arith_op_extract_p (op0))
 	  {
 	    if (speed)
 	      *cost += extra_cost->alu.extend_arith;
@@ -13503,6 +13916,9 @@ aarch64_init_builtins ()
 {
   aarch64_general_init_builtins ();
   aarch64_sve::init_builtins ();
+#ifdef SUBTARGET_INIT_BUILTINS
+  SUBTARGET_INIT_BUILTINS;
+#endif
 }
 
 /* Implement TARGET_FOLD_BUILTIN.  */
@@ -13869,6 +14285,265 @@ aarch64_first_cycle_multipass_dfa_lookahead_guard (rtx_insn *insn,
 
 /* Vectorizer cost model target hooks.  */
 
+/* Information about how the CPU would issue the scalar, Advanced SIMD
+   or SVE version of a vector loop, using the scheme defined by the
+   aarch64_base_vec_issue_info hierarchy of structures.  */
+struct aarch64_vec_op_count
+{
+  void dump () const;
+
+  /* The number of individual "general" operations.  See the comments
+     in aarch64_base_vec_issue_info for details.  */
+  unsigned int general_ops = 0;
+
+  /* The number of load and store operations, under the same scheme
+     as above.  */
+  unsigned int loads = 0;
+  unsigned int stores = 0;
+
+  /* The minimum number of cycles needed to execute all loop-carried
+     operations, which in the vector code become associated with
+     reductions.  */
+  unsigned int reduction_latency = 0;
+};
+
+/* Extends aarch64_vec_op_count with SVE-specific information.  */
+struct aarch64_sve_op_count : aarch64_vec_op_count
+{
+  void dump () const;
+
+  /* The number of individual predicate operations.  See the comments
+     in aarch64_sve_vec_issue_info for details.  */
+  unsigned int pred_ops = 0;
+};
+
+/* Information about vector code that we're in the process of costing.  */
+struct aarch64_vector_costs
+{
+  /* The normal latency-based costs for each region (prologue, body and
+     epilogue), indexed by vect_cost_model_location.  */
+  unsigned int region[3] = {};
+
+  /* True if we have performed one-time initialization based on the vec_info.
+
+     This variable exists because the vec_info is not passed to the
+     init_cost hook.  We therefore have to defer initialization based on
+     it till later.  */
+  bool analyzed_vinfo = false;
+
+  /* True if we're costing a vector loop, false if we're costing block-level
+     vectorization.  */
+  bool is_loop = false;
+
+  /* True if we've seen an SVE operation that we cannot currently vectorize
+     using Advanced SIMD.  */
+  bool saw_sve_only_op = false;
+
+  /* - If VEC_FLAGS is zero then we're costing the original scalar code.
+     - If VEC_FLAGS & VEC_ADVSIMD is nonzero then we're costing Advanced
+       SIMD code.
+     - If VEC_FLAGS & VEC_ANY_SVE is nonzero then we're costing SVE code.  */
+  unsigned int vec_flags = 0;
+
+  /* On some CPUs, SVE and Advanced SIMD provide the same theoretical vector
+     throughput, such as 4x128 Advanced SIMD vs. 2x256 SVE.  In those
+     situations, we try to predict whether an Advanced SIMD implementation
+     of the loop could be completely unrolled and become straight-line code.
+     If so, it is generally better to use the Advanced SIMD version rather
+     than length-agnostic SVE, since the SVE loop would execute an unknown
+     number of times and so could not be completely unrolled in the same way.
+
+     If we're applying this heuristic, UNROLLED_ADVSIMD_NITERS is the
+     number of Advanced SIMD loop iterations that would be unrolled and
+     UNROLLED_ADVSIMD_STMTS estimates the total number of statements
+     in the unrolled loop.  Both values are zero if we're not applying
+     the heuristic.  */
+  unsigned HOST_WIDE_INT unrolled_advsimd_niters = 0;
+  unsigned HOST_WIDE_INT unrolled_advsimd_stmts = 0;
+
+  /* If we're vectorizing a loop that executes a constant number of times,
+     this variable gives the number of times that the vector loop would
+     iterate, otherwise it is zero.  */
+  uint64_t num_vector_iterations = 0;
+
+  /* Used only when vectorizing loops.  Estimates the number and kind of scalar
+     operations that would be needed to perform the same work as one iteration
+     of the vector loop.  */
+  aarch64_vec_op_count scalar_ops;
+
+  /* Used only when vectorizing loops.  If VEC_FLAGS & VEC_ADVSIMD,
+     this structure estimates the number and kind of operations that the
+     vector loop would contain.  If VEC_FLAGS & VEC_SVE, the structure
+     estimates what the equivalent Advanced SIMD-only code would need in
+     order to perform the same work as one iteration of the SVE loop.  */
+  aarch64_vec_op_count advsimd_ops;
+
+  /* Used only when vectorizing loops with SVE.  It estimates the number and
+     kind of operations that the SVE loop would contain.  */
+  aarch64_sve_op_count sve_ops;
+
+  /* Used to detect cases in which we end up costing the same load twice,
+     once to account for results that are actually used and once to account
+     for unused results.  */
+  hash_map<nofree_ptr_hash<_stmt_vec_info>, unsigned int> seen_loads;
+};
+
+/* Implement TARGET_VECTORIZE_INIT_COST.  */
+void *
+aarch64_init_cost (class loop *)
+{
+  return new aarch64_vector_costs;
+}
+
+/* Return true if the current CPU should use the new costs defined
+   in GCC 11.  This should be removed for GCC 12 and above, with the
+   costs applying to all CPUs instead.  */
+static bool
+aarch64_use_new_vector_costs_p ()
+{
+  return (aarch64_tune_params.extra_tuning_flags
+	  & AARCH64_EXTRA_TUNE_USE_NEW_VECTOR_COSTS);
+}
+
+/* Return the appropriate SIMD costs for vectors of type VECTYPE.  */
+static const simd_vec_cost *
+aarch64_simd_vec_costs (tree vectype)
+{
+  const cpu_vector_cost *costs = aarch64_tune_params.vec_costs;
+  if (vectype != NULL
+      && aarch64_sve_mode_p (TYPE_MODE (vectype))
+      && costs->sve != NULL)
+    return costs->sve;
+  return costs->advsimd;
+}
+
+/* Return the appropriate SIMD costs for vectors with VEC_* flags FLAGS.  */
+static const simd_vec_cost *
+aarch64_simd_vec_costs_for_flags (unsigned int flags)
+{
+  const cpu_vector_cost *costs = aarch64_tune_params.vec_costs;
+  if ((flags & VEC_ANY_SVE) && costs->sve)
+    return costs->sve;
+  return costs->advsimd;
+}
+
+/* Decide whether to use the unrolling heuristic described above
+   aarch64_vector_costs::unrolled_advsimd_niters, updating that
+   field if so.  LOOP_VINFO describes the loop that we're vectorizing
+   and COSTS are the costs that we're calculating for it.  */
+static void
+aarch64_record_potential_advsimd_unrolling (loop_vec_info loop_vinfo,
+					    aarch64_vector_costs *costs)
+{
+  /* The heuristic only makes sense on targets that have the same
+     vector throughput for SVE and Advanced SIMD.  */
+  if (!(aarch64_tune_params.extra_tuning_flags
+	& AARCH64_EXTRA_TUNE_MATCHED_VECTOR_THROUGHPUT))
+    return;
+
+  /* We only want to apply the heuristic if LOOP_VINFO is being
+     vectorized for SVE.  */
+  if (!(costs->vec_flags & VEC_ANY_SVE))
+    return;
+
+  /* Check whether it is possible in principle to use Advanced SIMD
+     instead.  */
+  if (aarch64_autovec_preference == 2)
+    return;
+
+  /* We don't want to apply the heuristic to outer loops, since it's
+     harder to track two levels of unrolling.  */
+  if (LOOP_VINFO_LOOP (loop_vinfo)->inner)
+    return;
+
+  /* Only handle cases in which the number of Advanced SIMD iterations
+     would be known at compile time but the number of SVE iterations
+     would not.  */
+  if (!LOOP_VINFO_NITERS_KNOWN_P (loop_vinfo)
+      || aarch64_sve_vg.is_constant ())
+    return;
+
+  /* Guess how many times the Advanced SIMD loop would iterate and make
+     sure that it is within the complete unrolling limit.  Even if the
+     number of iterations is small enough, the number of statements might
+     not be, which is why we need to estimate the number of statements too.  */
+  unsigned int estimated_vq = aarch64_estimated_sve_vq ();
+  unsigned int advsimd_vf = CEIL (vect_vf_for_cost (loop_vinfo), estimated_vq);
+  unsigned HOST_WIDE_INT unrolled_advsimd_niters
+    = LOOP_VINFO_INT_NITERS (loop_vinfo) / advsimd_vf;
+  if (unrolled_advsimd_niters > (unsigned int) param_max_completely_peel_times)
+    return;
+
+  /* Record that we're applying the heuristic and should try to estimate
+     the number of statements in the Advanced SIMD loop.  */
+  costs->unrolled_advsimd_niters = unrolled_advsimd_niters;
+}
+
+/* Do one-time initialization of COSTS given that we're costing the loop
+   vectorization described by LOOP_VINFO.  */
+static void
+aarch64_analyze_loop_vinfo (loop_vec_info loop_vinfo,
+			    aarch64_vector_costs *costs)
+{
+  costs->is_loop = true;
+
+  /* Record the number of times that the vector loop would execute,
+     if known.  */
+  class loop *loop = LOOP_VINFO_LOOP (loop_vinfo);
+  auto scalar_niters = max_stmt_executions_int (loop);
+  if (scalar_niters >= 0)
+    {
+      unsigned int vf = vect_vf_for_cost (loop_vinfo);
+      if (LOOP_VINFO_MASKS (loop_vinfo).is_empty ())
+	costs->num_vector_iterations = scalar_niters / vf;
+      else
+	costs->num_vector_iterations = CEIL (scalar_niters, vf);
+    }
+
+  /* Detect whether we're costing the scalar code or the vector code.
+     This is a bit hacky: it would be better if the vectorizer told
+     us directly.
+
+     If we're costing the vector code, record whether we're vectorizing
+     for Advanced SIMD or SVE.  */
+  if (costs == LOOP_VINFO_TARGET_COST_DATA (loop_vinfo))
+    costs->vec_flags = aarch64_classify_vector_mode (loop_vinfo->vector_mode);
+  else
+    costs->vec_flags = 0;
+
+  /* Detect whether we're vectorizing for SVE and should
+     apply the unrolling heuristic described above
+     aarch64_vector_costs::unrolled_advsimd_niters.  */
+  aarch64_record_potential_advsimd_unrolling (loop_vinfo, costs);
+
+  /* Record the issue information for any SVE WHILE instructions that the
+     loop needs.  */
+  auto *issue_info = aarch64_tune_params.vec_costs->issue_info;
+  if (issue_info
+      && issue_info->sve
+      && !LOOP_VINFO_MASKS (loop_vinfo).is_empty ())
+    {
+      unsigned int num_masks = 0;
+      rgroup_controls *rgm;
+      unsigned int num_vectors_m1;
+      FOR_EACH_VEC_ELT (LOOP_VINFO_MASKS (loop_vinfo), num_vectors_m1, rgm)
+	if (rgm->type)
+	  num_masks += num_vectors_m1 + 1;
+      costs->sve_ops.pred_ops += num_masks * issue_info->sve->while_pred_ops;
+    }
+}
+
+/* Do one-time initialization of COSTS given that we're costing the block
+   vectorization described by BB_VINFO.  */
+static void
+aarch64_analyze_bb_vinfo (bb_vec_info bb_vinfo, aarch64_vector_costs *costs)
+{
+  /* Unfortunately, there's no easy way of telling whether we're costing
+     the vector code or the scalar code, so just assume that we're costing
+     the vector code.  */
+  costs->vec_flags = aarch64_classify_vector_mode (bb_vinfo->vector_mode);
+}
+
 /* Implement targetm.vectorize.builtin_vectorization_cost.  */
 static int
 aarch64_builtin_vectorization_cost (enum vect_cost_for_stmt type_of_cost,
@@ -13882,6 +14557,8 @@ aarch64_builtin_vectorization_cost (enum vect_cost_for_stmt type_of_cost,
   if (vectype != NULL)
     fp = FLOAT_TYPE_P (vectype);
 
+  const simd_vec_cost *simd_costs = aarch64_simd_vec_costs (vectype);
+
   switch (type_of_cost)
     {
       case scalar_stmt:
@@ -13894,27 +14571,28 @@ aarch64_builtin_vectorization_cost (enum vect_cost_for_stmt type_of_cost,
 	return costs->scalar_store_cost;
 
       case vector_stmt:
-	return fp ? costs->vec_fp_stmt_cost : costs->vec_int_stmt_cost;
+	return fp ? simd_costs->fp_stmt_cost
+		  : simd_costs->int_stmt_cost;
 
       case vector_load:
-	return costs->vec_align_load_cost;
+	return simd_costs->align_load_cost;
 
       case vector_store:
-	return costs->vec_store_cost;
+	return simd_costs->store_cost;
 
       case vec_to_scalar:
-	return costs->vec_to_scalar_cost;
+	return simd_costs->vec_to_scalar_cost;
 
       case scalar_to_vec:
-	return costs->scalar_to_vec_cost;
+	return simd_costs->scalar_to_vec_cost;
 
       case unaligned_load:
       case vector_gather_load:
-	return costs->vec_unalign_load_cost;
+	return simd_costs->unalign_load_cost;
 
       case unaligned_store:
       case vector_scatter_store:
-	return costs->vec_unalign_store_cost;
+	return simd_costs->unalign_store_cost;
 
       case cond_branch_taken:
 	return costs->cond_taken_branch_cost;
@@ -13923,10 +14601,11 @@ aarch64_builtin_vectorization_cost (enum vect_cost_for_stmt type_of_cost,
 	return costs->cond_not_taken_branch_cost;
 
       case vec_perm:
-	return costs->vec_permute_cost;
+	return simd_costs->permute_cost;
 
       case vec_promote_demote:
-	return fp ? costs->vec_fp_stmt_cost : costs->vec_int_stmt_cost;
+	return fp ? simd_costs->fp_stmt_cost
+		  : simd_costs->int_stmt_cost;
 
       case vec_construct:
 	elements = estimated_poly_value (TYPE_VECTOR_SUBPARTS (vectype));
@@ -13935,6 +14614,74 @@ aarch64_builtin_vectorization_cost (enum vect_cost_for_stmt type_of_cost,
       default:
 	gcc_unreachable ();
     }
+}
+
+/* Return true if STMT_INFO represents part of a reduction.  */
+static bool
+aarch64_is_reduction (stmt_vec_info stmt_info)
+{
+  return (STMT_VINFO_REDUC_DEF (stmt_info)
+	  || VECTORIZABLE_CYCLE_DEF (STMT_VINFO_DEF_TYPE (stmt_info)));
+}
+
+/* If STMT_INFO describes a reduction, return the type of reduction
+   it describes, otherwise return -1.  */
+static int
+aarch64_reduc_type (vec_info *vinfo, stmt_vec_info stmt_info)
+{
+  if (loop_vec_info loop_vinfo = dyn_cast<loop_vec_info> (vinfo))
+    if (STMT_VINFO_REDUC_DEF (stmt_info))
+      {
+	stmt_vec_info reduc_info = info_for_reduction (loop_vinfo, stmt_info);
+	return int (STMT_VINFO_REDUC_TYPE (reduc_info));
+      }
+  return -1;
+}
+
+/* Return true if an access of kind KIND for STMT_INFO represents one
+   vector of an LD[234] or ST[234] operation.  Return the total number of
+   vectors (2, 3 or 4) if so, otherwise return a value outside that range.  */
+static int
+aarch64_ld234_st234_vectors (vect_cost_for_stmt kind, stmt_vec_info stmt_info)
+{
+  if ((kind == vector_load
+       || kind == unaligned_load
+       || kind == vector_store
+       || kind == unaligned_store)
+      && STMT_VINFO_DATA_REF (stmt_info))
+    {
+      stmt_info = DR_GROUP_FIRST_ELEMENT (stmt_info);
+      if (stmt_info
+	  && STMT_VINFO_MEMORY_ACCESS_TYPE (stmt_info) == VMAT_LOAD_STORE_LANES)
+	return DR_GROUP_SIZE (stmt_info);
+    }
+  return 0;
+}
+
+/* If STMT_INFO is a COND_EXPR that includes an embedded comparison, return the
+   scalar type of the values being compared.  Return null otherwise.  */
+static tree
+aarch64_embedded_comparison_type (stmt_vec_info stmt_info)
+{
+  if (auto *assign = dyn_cast<gassign *> (stmt_info->stmt))
+    if (gimple_assign_rhs_code (assign) == COND_EXPR)
+      {
+	tree cond = gimple_assign_rhs1 (assign);
+	if (COMPARISON_CLASS_P (cond))
+	  return TREE_TYPE (TREE_OPERAND (cond, 0));
+      }
+  return NULL_TREE;
+}
+
+/* If STMT_INFO is a comparison or contains an embedded comparison, return the
+   scalar type of the values being compared.  Return null otherwise.  */
+static tree
+aarch64_comparison_type (stmt_vec_info stmt_info)
+{
+  if (auto *assign = dyn_cast<gassign *> (stmt_info->stmt))
+    if (TREE_CODE_CLASS (gimple_assign_rhs_code (assign)) == tcc_comparison)
+      return TREE_TYPE (gimple_assign_rhs1 (assign));
+  return aarch64_embedded_comparison_type (stmt_info);
 }
 
 /* Return true if creating multiple copies of STMT_INFO for Advanced SIMD
@@ -13965,7 +14712,7 @@ aarch64_advsimd_ldp_stp_p (enum vect_cost_for_stmt kind,
 
 /* Return true if STMT_INFO extends the result of a load.  */
 static bool
-aarch64_extending_load_p (stmt_vec_info stmt_info)
+aarch64_extending_load_p (class vec_info *vinfo, stmt_vec_info stmt_info)
 {
   gassign *assign = dyn_cast <gassign *> (stmt_info->stmt);
   if (!assign || !CONVERT_EXPR_CODE_P (gimple_assign_rhs_code (assign)))
@@ -13979,7 +14726,7 @@ aarch64_extending_load_p (stmt_vec_info stmt_info)
       || TYPE_PRECISION (lhs_type) <= TYPE_PRECISION (rhs_type))
     return false;
 
-  stmt_vec_info def_stmt_info = stmt_info->vinfo->lookup_def (rhs);
+  stmt_vec_info def_stmt_info = vinfo->lookup_def (rhs);
   return (def_stmt_info
 	  && STMT_VINFO_DATA_REF (def_stmt_info)
 	  && DR_IS_READ (STMT_VINFO_DATA_REF (def_stmt_info)));
@@ -14000,12 +14747,279 @@ aarch64_integer_truncation_p (stmt_vec_info stmt_info)
 	  && TYPE_PRECISION (lhs_type) < TYPE_PRECISION (rhs_type));
 }
 
+/* Return true if STMT_INFO is the second part of a two-statement multiply-add
+   or multiply-subtract sequence that might be suitable for fusing into a
+   single instruction.  */
+static bool
+aarch64_multiply_add_p (vec_info *vinfo, stmt_vec_info stmt_info)
+{
+  gassign *assign = dyn_cast<gassign *> (stmt_info->stmt);
+  if (!assign)
+    return false;
+  tree_code code = gimple_assign_rhs_code (assign);
+  if (code != PLUS_EXPR && code != MINUS_EXPR)
+    return false;
+
+  if (CONSTANT_CLASS_P (gimple_assign_rhs1 (assign))
+      || CONSTANT_CLASS_P (gimple_assign_rhs2 (assign)))
+    return false;
+
+  for (int i = 1; i < 3; ++i)
+    {
+      tree rhs = gimple_op (assign, i);
+      /* ??? Should we try to check for a single use as well?  */
+      if (TREE_CODE (rhs) != SSA_NAME)
+	continue;
+
+      stmt_vec_info def_stmt_info = vinfo->lookup_def (rhs);
+      if (!def_stmt_info
+	  || STMT_VINFO_DEF_TYPE (def_stmt_info) != vect_internal_def)
+	continue;
+      gassign *rhs_assign = dyn_cast<gassign *> (def_stmt_info->stmt);
+      if (!rhs_assign || gimple_assign_rhs_code (rhs_assign) != MULT_EXPR)
+	continue;
+
+      return true;
+    }
+  return false;
+}
+
+/* Return true if the vectorized form of STMT_INFO is something that is only
+   possible when using SVE instead of Advanced SIMD.  VECTYPE is the type of
+   the vector that STMT_INFO is operating on.  */
+static bool
+aarch64_sve_only_stmt_p (stmt_vec_info stmt_info, tree vectype)
+{
+  if (!aarch64_sve_mode_p (TYPE_MODE (vectype)))
+    return false;
+
+  if (STMT_VINFO_DATA_REF (stmt_info))
+    {
+      /* Check for true gathers and scatters (rather than just strided accesses
+	 that we've chosen to implement using gathers and scatters).  Although
+	 in principle we could use elementwise accesses for Advanced SIMD,
+	 the vectorizer doesn't yet support that.  */
+      if (STMT_VINFO_GATHER_SCATTER_P (stmt_info))
+	return true;
+
+      /* Check for masked loads and stores.  */
+      if (auto *call = dyn_cast<gcall *> (stmt_info->stmt))
+	if (gimple_call_internal_p (call)
+	    && internal_fn_mask_index (gimple_call_internal_fn (call)) >= 0)
+	  return true;
+    }
+
+  /* Check for 64-bit integer multiplications.  */
+  auto *assign = dyn_cast<gassign *> (stmt_info->stmt);
+  if (assign
+      && gimple_assign_rhs_code (assign) == MULT_EXPR
+      && GET_MODE_INNER (TYPE_MODE (vectype)) == DImode
+      && !integer_pow2p (gimple_assign_rhs2 (assign)))
+    return true;
+
+  return false;
+}
+
+/* We are considering implementing STMT_INFO using SVE vector type VECTYPE.
+   If STMT_INFO is an in-loop reduction that SVE supports directly, return
+   its latency in cycles, otherwise return zero.  SVE_COSTS specifies the
+   latencies of the relevant instructions.  */
+static unsigned int
+aarch64_sve_in_loop_reduction_latency (vec_info *vinfo,
+				       stmt_vec_info stmt_info,
+				       tree vectype,
+				       const sve_vec_cost *sve_costs)
+{
+  switch (aarch64_reduc_type (vinfo, stmt_info))
+    {
+    case EXTRACT_LAST_REDUCTION:
+      return sve_costs->clast_cost;
+
+    case FOLD_LEFT_REDUCTION:
+      switch (GET_MODE_INNER (TYPE_MODE (vectype)))
+	{
+	case E_HFmode:
+	case E_BFmode:
+	  return sve_costs->fadda_f16_cost;
+
+	case E_SFmode:
+	  return sve_costs->fadda_f32_cost;
+
+	case E_DFmode:
+	  return sve_costs->fadda_f64_cost;
+
+	default:
+	  break;
+	}
+      break;
+    }
+
+  return 0;
+}
+
+/* STMT_INFO describes a loop-carried operation in the original scalar code
+   that we are considering implementing as a reduction.  Return one of the
+   following values, depending on VEC_FLAGS:
+
+   - If VEC_FLAGS is zero, return the loop carry latency of the original
+     scalar operation.
+
+   - If VEC_FLAGS & VEC_ADVSIMD, return the loop carry latency of the
+     the Advanced SIMD implementation.
+
+   - If VEC_FLAGS & VEC_ANY_SVE, return the loop carry latency of the
+     SVE implementation.
+
+   VECTYPE is the type of vector that the vectorizer is considering using
+   for STMT_INFO, which might be different from the type of vector described
+   by VEC_FLAGS.  */
+static unsigned int
+aarch64_in_loop_reduction_latency (vec_info *vinfo, stmt_vec_info stmt_info,
+				   tree vectype, unsigned int vec_flags)
+{
+  const cpu_vector_cost *vec_costs = aarch64_tune_params.vec_costs;
+  const sve_vec_cost *sve_costs = nullptr;
+  if (vec_flags & VEC_ANY_SVE)
+    sve_costs = aarch64_tune_params.vec_costs->sve;
+
+  /* If the caller is asking for the SVE latency, check for forms of reduction
+     that only SVE can handle directly.  */
+  if (sve_costs)
+    {
+      unsigned int latency
+	= aarch64_sve_in_loop_reduction_latency (vinfo, stmt_info, vectype,
+						 sve_costs);
+      if (latency)
+	return latency;
+    }
+
+  /* Handle scalar costs.  */
+  if (vec_flags == 0)
+    {
+      if (FLOAT_TYPE_P (vectype))
+	return vec_costs->scalar_fp_stmt_cost;
+      return vec_costs->scalar_int_stmt_cost;
+    }
+
+  /* Otherwise, the loop body just contains normal integer or FP operations,
+     with a vector reduction outside the loop.  */
+  const simd_vec_cost *simd_costs
+    = aarch64_simd_vec_costs_for_flags (vec_flags);
+  if (FLOAT_TYPE_P (vectype))
+    return simd_costs->fp_stmt_cost;
+  return simd_costs->int_stmt_cost;
+}
+
+/* STMT_COST is the cost calculated by aarch64_builtin_vectorization_cost
+   for STMT_INFO, which has cost kind KIND.  If this is a scalar operation,
+   try to subdivide the target-independent categorization provided by KIND
+   to get a more accurate cost.  */
+static unsigned int
+aarch64_detect_scalar_stmt_subtype (vec_info *vinfo, vect_cost_for_stmt kind,
+				    stmt_vec_info stmt_info,
+				    unsigned int stmt_cost)
+{
+  /* Detect an extension of a loaded value.  In general, we'll be able to fuse
+     the extension with the load.  */
+  if (kind == scalar_stmt && aarch64_extending_load_p (vinfo, stmt_info))
+    return 0;
+
+  return stmt_cost;
+}
+
+/* STMT_COST is the cost calculated by aarch64_builtin_vectorization_cost
+   for the vectorized form of STMT_INFO, which has cost kind KIND and which
+   when vectorized would operate on vector type VECTYPE.  Try to subdivide
+   the target-independent categorization provided by KIND to get a more
+   accurate cost.  WHERE specifies where the cost associated with KIND
+   occurs.  */
+static unsigned int
+aarch64_detect_vector_stmt_subtype (vec_info *vinfo, vect_cost_for_stmt kind,
+				    stmt_vec_info stmt_info, tree vectype,
+				    enum vect_cost_model_location where,
+				    unsigned int stmt_cost)
+{
+  const simd_vec_cost *simd_costs = aarch64_simd_vec_costs (vectype);
+  const sve_vec_cost *sve_costs = nullptr;
+  if (aarch64_sve_mode_p (TYPE_MODE (vectype)))
+    sve_costs = aarch64_tune_params.vec_costs->sve;
+
+  /* It's generally better to avoid costing inductions, since the induction
+     will usually be hidden by other operations.  This is particularly true
+     for things like COND_REDUCTIONS.  */
+  if (is_a<gphi *> (stmt_info->stmt))
+    return 0;
+
+  /* Detect cases in which vec_to_scalar is describing the extraction of a
+     vector element in preparation for a scalar store.  The store itself is
+     costed separately.  */
+  if (kind == vec_to_scalar
+      && STMT_VINFO_DATA_REF (stmt_info)
+      && DR_IS_WRITE (STMT_VINFO_DATA_REF (stmt_info)))
+    return simd_costs->store_elt_extra_cost;
+
+  /* Detect cases in which a scalar_store is really storing one element
+     in a scatter operation.  */
+  if (kind == scalar_store
+      && sve_costs
+      && STMT_VINFO_MEMORY_ACCESS_TYPE (stmt_info) == VMAT_GATHER_SCATTER)
+    return sve_costs->scatter_store_elt_cost;
+
+  /* Detect cases in which vec_to_scalar represents an in-loop reduction.  */
+  if (kind == vec_to_scalar
+      && where == vect_body
+      && sve_costs)
+    {
+      unsigned int latency
+	= aarch64_sve_in_loop_reduction_latency (vinfo, stmt_info, vectype,
+						 sve_costs);
+      if (latency)
+	return latency;
+    }
+
+  /* Detect cases in which vec_to_scalar represents a single reduction
+     instruction like FADDP or MAXV.  */
+  if (kind == vec_to_scalar
+      && where == vect_epilogue
+      && aarch64_is_reduction (stmt_info))
+    switch (GET_MODE_INNER (TYPE_MODE (vectype)))
+      {
+      case E_QImode:
+	return simd_costs->reduc_i8_cost;
+
+      case E_HImode:
+	return simd_costs->reduc_i16_cost;
+
+      case E_SImode:
+	return simd_costs->reduc_i32_cost;
+
+      case E_DImode:
+	return simd_costs->reduc_i64_cost;
+
+      case E_HFmode:
+      case E_BFmode:
+	return simd_costs->reduc_f16_cost;
+
+      case E_SFmode:
+	return simd_costs->reduc_f32_cost;
+
+      case E_DFmode:
+	return simd_costs->reduc_f64_cost;
+
+      default:
+	break;
+      }
+
+  /* Otherwise stick with the original categorization.  */
+  return stmt_cost;
+}
+
 /* STMT_COST is the cost calculated by aarch64_builtin_vectorization_cost
    for STMT_INFO, which has cost kind KIND and which when vectorized would
    operate on vector type VECTYPE.  Adjust the cost as necessary for SVE
    targets.  */
 static unsigned int
-aarch64_sve_adjust_stmt_cost (vect_cost_for_stmt kind,
+aarch64_sve_adjust_stmt_cost (class vec_info *vinfo, vect_cost_for_stmt kind,
 			      stmt_vec_info stmt_info, tree vectype,
 			      unsigned int stmt_cost)
 {
@@ -14017,7 +15031,7 @@ aarch64_sve_adjust_stmt_cost (vect_cost_for_stmt kind,
      on the fly.  Optimistically assume that a load followed by an extension
      will fold to this form during combine, and that the extension therefore
      comes for free.  */
-  if (kind == vector_stmt && aarch64_extending_load_p (stmt_info))
+  if (kind == vector_stmt && aarch64_extending_load_p (vinfo, stmt_info))
     stmt_cost = 0;
 
   /* For similar reasons, vector_stmt integer truncations are a no-op,
@@ -14068,36 +15082,671 @@ aarch64_sve_adjust_stmt_cost (vect_cost_for_stmt kind,
   return stmt_cost;
 }
 
+/* STMT_COST is the cost calculated for STMT_INFO, which has cost kind KIND
+   and which when vectorized would operate on vector type VECTYPE.  Add the
+   cost of any embedded operations.  */
+static unsigned int
+aarch64_adjust_stmt_cost (vect_cost_for_stmt kind, stmt_vec_info stmt_info,
+			  tree vectype, unsigned int stmt_cost)
+{
+  if (vectype)
+    {
+      const simd_vec_cost *simd_costs = aarch64_simd_vec_costs (vectype);
+
+      /* Detect cases in which a vector load or store represents an
+	 LD[234] or ST[234] instruction.  */
+      switch (aarch64_ld234_st234_vectors (kind, stmt_info))
+	{
+	case 2:
+	  stmt_cost += simd_costs->ld2_st2_permute_cost;
+	  break;
+
+	case 3:
+	  stmt_cost += simd_costs->ld3_st3_permute_cost;
+	  break;
+
+	case 4:
+	  stmt_cost += simd_costs->ld4_st4_permute_cost;
+	  break;
+	}
+
+      if (kind == vector_stmt || kind == vec_to_scalar)
+	if (tree cmp_type = aarch64_embedded_comparison_type (stmt_info))
+	  {
+	    if (FLOAT_TYPE_P (cmp_type))
+	      stmt_cost += simd_costs->fp_stmt_cost;
+	    else
+	      stmt_cost += simd_costs->int_stmt_cost;
+	  }
+    }
+
+  if (kind == scalar_stmt)
+    if (tree cmp_type = aarch64_embedded_comparison_type (stmt_info))
+      {
+	if (FLOAT_TYPE_P (cmp_type))
+	  stmt_cost += aarch64_tune_params.vec_costs->scalar_fp_stmt_cost;
+	else
+	  stmt_cost += aarch64_tune_params.vec_costs->scalar_int_stmt_cost;
+      }
+
+  return stmt_cost;
+}
+
+/* VINFO, COSTS, COUNT, KIND, STMT_INFO and VECTYPE are the same as for
+   TARGET_VECTORIZE_ADD_STMT_COST and they describe an operation in the
+   body of a vector loop.  Record issue information relating to the vector
+   operation in OPS, where OPS is one of COSTS->scalar_ops, COSTS->advsimd_ops
+   or COSTS->sve_ops; see the comments above those variables for details.
+   In addition:
+
+   - VEC_FLAGS is zero if OPS is COSTS->scalar_ops.
+
+   - VEC_FLAGS & VEC_ADVSIMD is nonzero if OPS is COSTS->advsimd_ops.
+
+   - VEC_FLAGS & VEC_ANY_SVE is nonzero if OPS is COSTS->sve_ops.
+
+   ISSUE_INFO provides the scalar, Advanced SIMD or SVE issue information
+   associated with OPS and VEC_FLAGS.  FACTOR says how many iterations of
+   the loop described by VEC_FLAGS would be needed to match one iteration
+   of the vector loop in VINFO.  */
+static void
+aarch64_count_ops (class vec_info *vinfo, aarch64_vector_costs *costs,
+		   unsigned int count, enum vect_cost_for_stmt kind,
+		   _stmt_vec_info *stmt_info, tree vectype,
+		   unsigned int vec_flags, aarch64_vec_op_count *ops,
+		   const aarch64_base_vec_issue_info *issue_info,
+		   unsigned int factor)
+{
+  if (!issue_info)
+    return;
+
+  const aarch64_simd_vec_issue_info *simd_issue = nullptr;
+  if (vec_flags)
+    simd_issue = static_cast<const aarch64_simd_vec_issue_info *> (issue_info);
+
+  const aarch64_sve_vec_issue_info *sve_issue = nullptr;
+  if (vec_flags & VEC_ANY_SVE)
+    sve_issue = static_cast<const aarch64_sve_vec_issue_info *> (issue_info);
+
+  /* Calculate the minimum cycles per iteration imposed by a reduction
+     operation.  */
+  if ((kind == vector_stmt || kind == vec_to_scalar)
+      && aarch64_is_reduction (stmt_info))
+    {
+      unsigned int base
+	= aarch64_in_loop_reduction_latency (vinfo, stmt_info, vectype,
+					     vec_flags);
+      if (aarch64_reduc_type (vinfo, stmt_info) == FOLD_LEFT_REDUCTION)
+	{
+	  if (aarch64_sve_mode_p (TYPE_MODE (vectype)))
+	    {
+	      /* When costing an SVE FADDA, the vectorizer treats vec_to_scalar
+		 as a single operation, whereas for Advanced SIMD it is a
+		 per-element one.  Increase the factor accordingly, both for
+		 the reduction_latency calculation and for the op couting.  */
+	      if (vec_flags & VEC_ADVSIMD)
+		factor = vect_nunits_for_cost (vectype);
+	    }
+	  else
+	    /* An Advanced SIMD fold-left reduction is the same as a
+	       scalar one and the vectorizer therefore treats vec_to_scalar
+	       as a per-element cost.  There is no extra factor to apply for
+	       scalar code, either for reduction_latency or for the op
+	       counting below.  */
+	    factor = 1;
+	}
+
+      /* ??? Ideally for vector code we'd do COUNT * FACTOR reductions in
+	 parallel, but unfortunately that's not yet the case.  */
+      ops->reduction_latency = MAX (ops->reduction_latency,
+				    base * count * factor);
+    }
+
+  /* Assume that multiply-adds will become a single operation.  */
+  if (stmt_info && aarch64_multiply_add_p (vinfo, stmt_info))
+    return;
+
+  /* When costing scalar statements in vector code, the count already
+     includes the number of scalar elements in the vector, so we don't
+     need to apply the factor as well.  */
+  if (kind == scalar_load || kind == scalar_store || kind == scalar_stmt)
+    factor = 1;
+
+  /* This can go negative with the load handling below.  */
+  int num_copies = count * factor;
+
+  /* Count the basic operation cost associated with KIND.  */
+  switch (kind)
+    {
+    case cond_branch_taken:
+    case cond_branch_not_taken:
+    case vector_gather_load:
+    case vector_scatter_store:
+      /* We currently don't expect these to be used in a loop body.  */
+      break;
+
+    case vec_perm:
+    case vec_promote_demote:
+    case vec_construct:
+    case vec_to_scalar:
+    case scalar_to_vec:
+      /* Assume that these operations have no overhead in the original
+	 scalar code.  */
+      if (!vec_flags)
+	break;
+      /* Fallthrough.  */
+    case vector_stmt:
+    case scalar_stmt:
+      ops->general_ops += num_copies;
+      break;
+
+    case scalar_load:
+    case vector_load:
+    case unaligned_load:
+      /* When costing scalars, detect cases in which we are called twice for
+	 the same load.  This happens for LD[234] operations if only some of
+	 the results are used.  The first time represents the cost of loading
+	 the unused vectors, while the second time represents the cost of
+	 loading the useful parts.  Only the latter should count towards the
+	 scalar costs.  */
+      if (stmt_info && !vec_flags)
+	{
+	  bool existed = false;
+	  unsigned int &prev_count
+	    = costs->seen_loads.get_or_insert (stmt_info, &existed);
+	  if (existed)
+	    num_copies -= prev_count;
+	  else
+	    prev_count = num_copies;
+	}
+      ops->loads += num_copies;
+      if (vec_flags || FLOAT_TYPE_P (vectype))
+	ops->general_ops += issue_info->fp_simd_load_general_ops * num_copies;
+      break;
+
+    case vector_store:
+    case unaligned_store:
+    case scalar_store:
+      ops->stores += num_copies;
+      if (vec_flags || FLOAT_TYPE_P (vectype))
+	ops->general_ops += issue_info->fp_simd_store_general_ops * num_copies;
+      break;
+    }
+
+  /* Add any embedded comparison operations.  */
+  if ((kind == scalar_stmt || kind == vector_stmt || kind == vec_to_scalar)
+      && aarch64_embedded_comparison_type (stmt_info))
+    ops->general_ops += num_copies;
+
+  /* Detect COND_REDUCTIONs and things that would need to become
+     COND_REDUCTIONs if they were implemented using Advanced SIMD.
+     There are then two sets of VEC_COND_EXPRs, whereas so far we
+     have only accounted for one.  */
+  if (vec_flags && (kind == vector_stmt || kind == vec_to_scalar))
+    {
+      int reduc_type = aarch64_reduc_type (vinfo, stmt_info);
+      if ((reduc_type == EXTRACT_LAST_REDUCTION && (vec_flags & VEC_ADVSIMD))
+	  || reduc_type == COND_REDUCTION)
+	ops->general_ops += num_copies;
+    }
+
+  /* Count the predicate operations needed by an SVE comparison.  */
+  if (sve_issue && (kind == vector_stmt || kind == vec_to_scalar))
+    if (tree type = aarch64_comparison_type (stmt_info))
+      {
+	unsigned int base = (FLOAT_TYPE_P (type)
+			     ? sve_issue->fp_cmp_pred_ops
+			     : sve_issue->int_cmp_pred_ops);
+	costs->sve_ops.pred_ops += base * num_copies;
+      }
+
+  /* Add any extra overhead associated with LD[234] and ST[234] operations.  */
+  if (simd_issue)
+    switch (aarch64_ld234_st234_vectors (kind, stmt_info))
+      {
+      case 2:
+	ops->general_ops += simd_issue->ld2_st2_general_ops * num_copies;
+	break;
+
+      case 3:
+	ops->general_ops += simd_issue->ld3_st3_general_ops * num_copies;
+	break;
+
+      case 4:
+	ops->general_ops += simd_issue->ld4_st4_general_ops * num_copies;
+	break;
+      }
+
+  /* Add any overhead associated with gather loads and scatter stores.  */
+  if (sve_issue
+      && (kind == scalar_load || kind == scalar_store)
+      && STMT_VINFO_MEMORY_ACCESS_TYPE (stmt_info) == VMAT_GATHER_SCATTER)
+    {
+      unsigned int pairs = CEIL (count, 2);
+      costs->sve_ops.pred_ops
+	+= sve_issue->gather_scatter_pair_pred_ops * pairs;
+      ops->general_ops += sve_issue->gather_scatter_pair_general_ops * pairs;
+    }
+}
+
 /* Implement targetm.vectorize.add_stmt_cost.  */
 static unsigned
-aarch64_add_stmt_cost (void *data, int count, enum vect_cost_for_stmt kind,
-		       struct _stmt_vec_info *stmt_info, int misalign,
-		       enum vect_cost_model_location where)
+aarch64_add_stmt_cost (class vec_info *vinfo, void *data, int count,
+		       enum vect_cost_for_stmt kind,
+		       struct _stmt_vec_info *stmt_info, tree vectype,
+		       int misalign, enum vect_cost_model_location where)
 {
-  unsigned *cost = (unsigned *) data;
+  auto *costs = static_cast<aarch64_vector_costs *> (data);
   unsigned retval = 0;
 
   if (flag_vect_cost_model)
     {
-      tree vectype = stmt_info ? stmt_vectype (stmt_info) : NULL_TREE;
-      int stmt_cost =
-	    aarch64_builtin_vectorization_cost (kind, vectype, misalign);
+      int stmt_cost
+	= aarch64_builtin_vectorization_cost (kind, vectype, misalign);
 
+      /* Do one-time initialization based on the vinfo.  */
+      loop_vec_info loop_vinfo = dyn_cast<loop_vec_info> (vinfo);
+      bb_vec_info bb_vinfo = dyn_cast<bb_vec_info> (vinfo);
+      if (!costs->analyzed_vinfo && aarch64_use_new_vector_costs_p ())
+	{
+	  if (loop_vinfo)
+	    aarch64_analyze_loop_vinfo (loop_vinfo, costs);
+	  else
+	    aarch64_analyze_bb_vinfo (bb_vinfo, costs);
+	  costs->analyzed_vinfo = true;
+	}
+
+      /* Try to get a more accurate cost by looking at STMT_INFO instead
+	 of just looking at KIND.  */
+      if (stmt_info && aarch64_use_new_vector_costs_p ())
+	{
+	  if (vectype && aarch64_sve_only_stmt_p (stmt_info, vectype))
+	    costs->saw_sve_only_op = true;
+
+	  stmt_cost = aarch64_detect_scalar_stmt_subtype
+	    (vinfo, kind, stmt_info, stmt_cost);
+
+	  if (vectype && costs->vec_flags)
+	    stmt_cost = aarch64_detect_vector_stmt_subtype (vinfo, kind,
+							    stmt_info, vectype,
+							    where, stmt_cost);
+	}
+
+      /* Do any SVE-specific adjustments to the cost.  */
       if (stmt_info && vectype && aarch64_sve_mode_p (TYPE_MODE (vectype)))
-	stmt_cost = aarch64_sve_adjust_stmt_cost (kind, stmt_info, vectype,
-						  stmt_cost);
+	stmt_cost = aarch64_sve_adjust_stmt_cost (vinfo, kind, stmt_info,
+						  vectype, stmt_cost);
+
+      if (stmt_info && aarch64_use_new_vector_costs_p ())
+	{
+	  /* Account for any extra "embedded" costs that apply additively
+	     to the base cost calculated above.  */
+	  stmt_cost = aarch64_adjust_stmt_cost (kind, stmt_info, vectype,
+						stmt_cost);
+
+	  /* If we're recording a nonzero vector loop body cost, also estimate
+	     the operations that would need to be issued by all relevant
+	     implementations of the loop.  */
+	  auto *issue_info = aarch64_tune_params.vec_costs->issue_info;
+	  if (loop_vinfo
+	      && issue_info
+	      && costs->vec_flags
+	      && where == vect_body
+	      && vectype
+	      && stmt_cost != 0)
+	    {
+	      /* Record estimates for the scalar code.  */
+	      aarch64_count_ops (vinfo, costs, count, kind, stmt_info, vectype,
+				 0, &costs->scalar_ops, issue_info->scalar,
+				 vect_nunits_for_cost (vectype));
+
+	      if (aarch64_sve_mode_p (vinfo->vector_mode) && issue_info->sve)
+		{
+		  /* Record estimates for a possible Advanced SIMD version
+		     of the SVE code.  */
+		  aarch64_count_ops (vinfo, costs, count, kind, stmt_info,
+				     vectype, VEC_ADVSIMD, &costs->advsimd_ops,
+				     issue_info->advsimd,
+				     aarch64_estimated_sve_vq ());
+
+		  /* Record estimates for the SVE code itself.  */
+		  aarch64_count_ops (vinfo, costs, count, kind, stmt_info,
+				     vectype, VEC_ANY_SVE, &costs->sve_ops,
+				     issue_info->sve, 1);
+		}
+	      else
+		/* Record estimates for the Advanced SIMD code.  Treat SVE like
+		   Advanced SIMD if the CPU has no specific SVE costs.  */
+		aarch64_count_ops (vinfo, costs, count, kind, stmt_info,
+				   vectype, VEC_ADVSIMD, &costs->advsimd_ops,
+				   issue_info->advsimd, 1);
+	    }
+
+	  /* If we're applying the SVE vs. Advanced SIMD unrolling heuristic,
+	     estimate the number of statements in the unrolled Advanced SIMD
+	     loop.  For simplicitly, we assume that one iteration of the
+	     Advanced SIMD loop would need the same number of statements
+	     as one iteration of the SVE loop.  */
+	  if (where == vect_body && costs->unrolled_advsimd_niters)
+	    costs->unrolled_advsimd_stmts
+	      += count * costs->unrolled_advsimd_niters;
+	}
 
       /* Statements in an inner loop relative to the loop being
 	 vectorized are weighted more heavily.  The value here is
 	 arbitrary and could potentially be improved with analysis.  */
-      if (where == vect_body && stmt_info && stmt_in_inner_loop_p (stmt_info))
+      if (where == vect_body && stmt_info
+	  && stmt_in_inner_loop_p (vinfo, stmt_info))
 	count *= 50; /*  FIXME  */
 
       retval = (unsigned) (count * stmt_cost);
-      cost[where] += retval;
+      costs->region[where] += retval;
     }
 
   return retval;
+}
+
+/* Dump information about the structure.  */
+void
+aarch64_vec_op_count::dump () const
+{
+  dump_printf_loc (MSG_NOTE, vect_location,
+		   "  load operations = %d\n", loads);
+  dump_printf_loc (MSG_NOTE, vect_location,
+		   "  store operations = %d\n", stores);
+  dump_printf_loc (MSG_NOTE, vect_location,
+		   "  general operations = %d\n", general_ops);
+  dump_printf_loc (MSG_NOTE, vect_location,
+		   "  reduction latency = %d\n", reduction_latency);
+}
+
+/* Dump information about the structure.  */
+void
+aarch64_sve_op_count::dump () const
+{
+  aarch64_vec_op_count::dump ();
+  dump_printf_loc (MSG_NOTE, vect_location,
+		   "  predicate operations = %d\n", pred_ops);
+}
+
+/* Use ISSUE_INFO to estimate the minimum number of cycles needed to issue
+   the operations described by OPS.  This is a very simplistic model!  */
+static unsigned int
+aarch64_estimate_min_cycles_per_iter
+  (const aarch64_vec_op_count *ops,
+   const aarch64_base_vec_issue_info *issue_info)
+{
+  unsigned int cycles = MAX (ops->reduction_latency, 1);
+  cycles = MAX (cycles, CEIL (ops->stores, issue_info->stores_per_cycle));
+  cycles = MAX (cycles, CEIL (ops->loads + ops->stores,
+			      issue_info->loads_stores_per_cycle));
+  cycles = MAX (cycles, CEIL (ops->general_ops,
+			      issue_info->general_ops_per_cycle));
+  return cycles;
+}
+
+/* BODY_COST is the cost of a vector loop body recorded in COSTS.
+   Adjust the cost as necessary and return the new cost.  */
+static unsigned int
+aarch64_adjust_body_cost (aarch64_vector_costs *costs, unsigned int body_cost)
+{
+  unsigned int orig_body_cost = body_cost;
+  bool should_disparage = false;
+
+  if (dump_enabled_p ())
+    dump_printf_loc (MSG_NOTE, vect_location,
+		     "Original vector body cost = %d\n", body_cost);
+
+  if (costs->unrolled_advsimd_stmts)
+    {
+      if (dump_enabled_p ())
+	dump_printf_loc (MSG_NOTE, vect_location, "Number of insns in"
+			 " unrolled Advanced SIMD loop = %d\n",
+			 costs->unrolled_advsimd_stmts);
+
+      /* Apply the Advanced SIMD vs. SVE unrolling heuristic described above
+	 aarch64_vector_costs::unrolled_advsimd_niters.
+
+	 The balance here is tricky.  On the one hand, we can't be sure whether
+	 the code is vectorizable with Advanced SIMD or not.  However, even if
+	 it isn't vectorizable with Advanced SIMD, there's a possibility that
+	 the scalar code could also be unrolled.  Some of the code might then
+	 benefit from SLP, or from using LDP and STP.  We therefore apply
+	 the heuristic regardless of can_use_advsimd_p.  */
+      if (costs->unrolled_advsimd_stmts
+	  && (costs->unrolled_advsimd_stmts
+	      <= (unsigned int) param_max_completely_peeled_insns))
+	{
+	  unsigned int estimated_vq = aarch64_estimated_sve_vq ();
+	  unsigned int min_cost = (orig_body_cost * estimated_vq) + 1;
+	  if (body_cost < min_cost)
+	    {
+	      if (dump_enabled_p ())
+		dump_printf_loc (MSG_NOTE, vect_location,
+				 "Increasing body cost to %d to account for"
+				 " unrolling\n", min_cost);
+	      body_cost = min_cost;
+	      should_disparage = true;
+	    }
+	}
+    }
+
+  auto *issue_info = aarch64_tune_params.vec_costs->issue_info;
+  if (!issue_info)
+    return body_cost;
+
+  unsigned int scalar_cycles_per_iter
+    = aarch64_estimate_min_cycles_per_iter (&costs->scalar_ops,
+					    issue_info->scalar);
+  unsigned int advsimd_cycles_per_iter
+    = aarch64_estimate_min_cycles_per_iter (&costs->advsimd_ops,
+					    issue_info->advsimd);
+  bool could_use_advsimd
+    = ((costs->vec_flags & VEC_ADVSIMD)
+       || (aarch64_autovec_preference != 2
+	   && (aarch64_tune_params.extra_tuning_flags
+	       & AARCH64_EXTRA_TUNE_MATCHED_VECTOR_THROUGHPUT)
+	   && !costs->saw_sve_only_op));
+
+  if (dump_enabled_p ())
+    {
+      if (IN_RANGE (costs->num_vector_iterations, 0, 65536))
+	dump_printf_loc (MSG_NOTE, vect_location,
+			 "Vector loop iterates at most %wd times\n",
+			 costs->num_vector_iterations);
+      dump_printf_loc (MSG_NOTE, vect_location, "Scalar issue estimate:\n");
+      costs->scalar_ops.dump ();
+      dump_printf_loc (MSG_NOTE, vect_location,
+		       "  estimated cycles per iteration = %d\n",
+		       scalar_cycles_per_iter);
+      if (could_use_advsimd)
+	{
+	  dump_printf_loc (MSG_NOTE, vect_location,
+			   "Advanced SIMD issue estimate:\n");
+	  costs->advsimd_ops.dump ();
+	  dump_printf_loc (MSG_NOTE, vect_location,
+			   "  estimated cycles per iteration = %d\n",
+			   advsimd_cycles_per_iter);
+	}
+      else
+	dump_printf_loc (MSG_NOTE, vect_location,
+			 "Loop could not use Advanced SIMD\n");
+    }
+
+  uint64_t vector_cycles_per_iter = advsimd_cycles_per_iter;
+  unsigned int vector_reduction_latency = costs->advsimd_ops.reduction_latency;
+  if ((costs->vec_flags & VEC_ANY_SVE) && issue_info->sve)
+    {
+      /* Estimate the minimum number of cycles per iteration needed to issue
+	 non-predicate operations.  */
+      unsigned int sve_cycles_per_iter
+	= aarch64_estimate_min_cycles_per_iter (&costs->sve_ops,
+						issue_info->sve);
+
+      /* Separately estimate the minimum number of cycles per iteration needed
+	 to issue the predicate operations.  */
+      unsigned int pred_cycles_per_iter
+	= CEIL (costs->sve_ops.pred_ops, issue_info->sve->pred_ops_per_cycle);
+
+      if (dump_enabled_p ())
+	{
+	  dump_printf_loc (MSG_NOTE, vect_location, "SVE issue estimate:\n");
+	  costs->sve_ops.dump ();
+	  dump_printf_loc (MSG_NOTE, vect_location,
+			   "  estimated cycles per iteration for non-predicate"
+			   " operations = %d\n", sve_cycles_per_iter);
+	  if (costs->sve_ops.pred_ops)
+	    dump_printf_loc (MSG_NOTE, vect_location, "  estimated cycles per"
+			     " iteration for predicate operations = %d\n",
+			     pred_cycles_per_iter);
+	}
+
+      vector_cycles_per_iter = MAX (sve_cycles_per_iter, pred_cycles_per_iter);
+      vector_reduction_latency = costs->sve_ops.reduction_latency;
+
+      /* If the scalar version of the loop could issue at least as
+	 quickly as the predicate parts of the SVE loop, make the SVE loop
+	 prohibitively expensive.  In this case vectorization is adding an
+	 overhead that the original scalar code didn't have.
+
+	 This is mostly intended to detect cases in which WHILELOs dominate
+	 for very tight loops, which is something that normal latency-based
+	 costs would not model.  Adding this kind of cliffedge would be
+	 too drastic for scalar_cycles_per_iter vs. sve_cycles_per_iter;
+	 code later in the function handles that case in a more
+	 conservative way.  */
+      uint64_t sve_estimate = pred_cycles_per_iter + 1;
+      if (scalar_cycles_per_iter < sve_estimate)
+	{
+	  unsigned int min_cost
+	    = orig_body_cost * estimated_poly_value (BYTES_PER_SVE_VECTOR);
+	  if (body_cost < min_cost)
+	    {
+	      if (dump_enabled_p ())
+		dump_printf_loc (MSG_NOTE, vect_location,
+				 "Increasing body cost to %d because the"
+				 " scalar code could issue within the limit"
+				 " imposed by predicate operations\n",
+				 min_cost);
+	      body_cost = min_cost;
+	      should_disparage = true;
+	    }
+	}
+
+      /* If it appears that the Advanced SIMD version of a loop could issue
+	 more quickly than the SVE one, increase the SVE cost in proportion
+	 to the difference.  The intention is to make Advanced SIMD preferable
+	 in cases where an Advanced SIMD version exists, without increasing
+	 the costs so much that SVE won't be used at all.
+
+	 The reasoning is similar to the scalar vs. predicate comparison above:
+	 if the issue rate of the SVE code is limited by predicate operations
+	 (i.e. if pred_cycles_per_iter > sve_cycles_per_iter), and if the
+	 Advanced SIMD code could issue within the limit imposed by the
+	 predicate operations, the predicate operations are adding an
+	 overhead that the original code didn't have and so we should prefer
+	 the Advanced SIMD version.  However, if the predicate operations
+	 do not dominate in this way, we should only increase the cost of
+	 the SVE code if sve_cycles_per_iter is strictly greater than
+	 advsimd_cycles_per_iter.  Given rounding effects, this should mean
+	 that Advanced SIMD is either better or at least no worse.  */
+      if (sve_cycles_per_iter >= pred_cycles_per_iter)
+	sve_estimate = sve_cycles_per_iter;
+      if (could_use_advsimd && advsimd_cycles_per_iter < sve_estimate)
+	{
+	  /* This ensures that min_cost > orig_body_cost * 2.  */
+	  unsigned int min_cost
+	    = orig_body_cost * CEIL (sve_estimate, advsimd_cycles_per_iter) + 1;
+	  if (body_cost < min_cost)
+	    {
+	      if (dump_enabled_p ())
+		dump_printf_loc (MSG_NOTE, vect_location,
+				 "Increasing body cost to %d because Advanced"
+				 " SIMD code could issue as quickly\n",
+				 min_cost);
+	      body_cost = min_cost;
+	      should_disparage = true;
+	    }
+	}
+    }
+
+  /* Decide whether to stick to latency-based costs or whether to try to
+     take issue rates into account.  */
+  unsigned int threshold = aarch64_loop_vect_issue_rate_niters;
+  if (costs->vec_flags & VEC_ANY_SVE)
+    threshold = CEIL (threshold, aarch64_estimated_sve_vq ());
+
+  if (costs->num_vector_iterations >= 1
+      && costs->num_vector_iterations < threshold)
+    {
+      if (dump_enabled_p ())
+	dump_printf_loc (MSG_NOTE, vect_location,
+			 "Low iteration count, so using pure latency"
+			 " costs\n");
+    }
+  /* Increase the cost of the vector code if it looks like the scalar code
+     could issue more quickly.  These values are only rough estimates,
+     so minor differences should only result in minor changes.  */
+  else if (scalar_cycles_per_iter < vector_cycles_per_iter)
+    {
+      body_cost = CEIL (body_cost * vector_cycles_per_iter,
+			scalar_cycles_per_iter);
+      if (dump_enabled_p ())
+	dump_printf_loc (MSG_NOTE, vect_location,
+			 "Increasing body cost to %d because scalar code"
+			 " would issue more quickly\n", body_cost);
+    }
+  /* In general, it's expected that the proposed vector code would be able
+     to issue more quickly than the original scalar code.  This should
+     already be reflected to some extent in the latency-based costs.
+
+     However, the latency-based costs effectively assume that the scalar
+     code and the vector code execute serially, which tends to underplay
+     one important case: if the real (non-serialized) execution time of
+     a scalar iteration is dominated by loop-carried dependencies,
+     and if the vector code is able to reduce both the length of
+     the loop-carried dependencies *and* the number of cycles needed
+     to issue the code in general, we can be more confident that the
+     vector code is an improvement, even if adding the other (non-loop-carried)
+     latencies tends to hide this saving.  We therefore reduce the cost of the
+     vector loop body in proportion to the saving.  */
+  else if (costs->scalar_ops.reduction_latency > vector_reduction_latency
+	   && costs->scalar_ops.reduction_latency == scalar_cycles_per_iter
+	   && scalar_cycles_per_iter > vector_cycles_per_iter
+	   && !should_disparage)
+    {
+      body_cost = CEIL (body_cost * vector_cycles_per_iter,
+			scalar_cycles_per_iter);
+      if (dump_enabled_p ())
+	dump_printf_loc (MSG_NOTE, vect_location,
+			 "Decreasing body cost to %d account for smaller"
+			 " reduction latency\n", body_cost);
+    }
+
+  return body_cost;
+}
+
+/* Implement TARGET_VECTORIZE_FINISH_COST.  */
+static void
+aarch64_finish_cost (void *data, unsigned *prologue_cost,
+		     unsigned *body_cost, unsigned *epilogue_cost)
+{
+  auto *costs = static_cast<aarch64_vector_costs *> (data);
+  *prologue_cost = costs->region[vect_prologue];
+  *body_cost     = costs->region[vect_body];
+  *epilogue_cost = costs->region[vect_epilogue];
+
+  if (costs->is_loop
+      && costs->vec_flags
+      && aarch64_use_new_vector_costs_p ())
+    *body_cost = aarch64_adjust_body_cost (costs, *body_cost);
+}
+
+/* Implement TARGET_VECTORIZE_DESTROY_COST_DATA.  */
+static void
+aarch64_destroy_cost_data (void *data)
+{
+  delete static_cast<aarch64_vector_costs *> (data);
 }
 
 static void initialize_aarch64_code_model (struct gcc_options *);
@@ -14625,14 +16274,6 @@ aarch64_override_options_internal (struct gcc_options *opts)
      the *options_set structs anyway.  */
   SET_OPTION_IF_UNSET (opts, &global_options_set,
 		       param_sched_autopref_queue_depth, queue_depth);
-
-  /* If the core wants only AdvancedSIMD autovectorization, do this through
-     aarch64_autovec_preference.  If the user set it explicitly, they should
-     know what they want.  */
-  if (aarch64_tune_params.extra_tuning_flags
-      & AARCH64_EXTRA_TUNE_PREFER_ADVSIMD_AUTOVEC)
-    SET_OPTION_IF_UNSET (opts, &global_options_set,
-			 aarch64_autovec_preference, 1);
 
   /* If using Advanced SIMD only for autovectorization disable SVE vector costs
      comparison.  */
@@ -15272,7 +16913,7 @@ aarch64_override_options (void)
   /* Save these options as the default ones in case we push and pop them later
      while processing functions with potential target attributes.  */
   target_option_default_node = target_option_current_node
-      = build_target_option_node (&global_options);
+    = build_target_option_node (&global_options, &global_options_set);
 }
 
 /* Implement targetm.override_options_after_change.  */
@@ -15281,6 +16922,16 @@ static void
 aarch64_override_options_after_change (void)
 {
   aarch64_override_options_after_change_1 (&global_options);
+}
+
+/* Implement the TARGET_OFFLOAD_OPTIONS hook.  */
+static char *
+aarch64_offload_options (void)
+{
+  if (TARGET_ILP32)
+    return xstrdup ("-foffload-abi=ilp32");
+  else
+    return xstrdup ("-foffload-abi=lp64");
 }
 
 static struct machine_function *
@@ -15337,7 +16988,8 @@ initialize_aarch64_code_model (struct gcc_options *opts)
 /* Implement TARGET_OPTION_SAVE.  */
 
 static void
-aarch64_option_save (struct cl_target_option *ptr, struct gcc_options *opts)
+aarch64_option_save (struct cl_target_option *ptr, struct gcc_options *opts,
+		     struct gcc_options */* opts_set */)
 {
   ptr->x_aarch64_override_tune_string = opts->x_aarch64_override_tune_string;
   ptr->x_aarch64_branch_protection_string
@@ -15348,12 +17000,18 @@ aarch64_option_save (struct cl_target_option *ptr, struct gcc_options *opts)
    using the information saved in PTR.  */
 
 static void
-aarch64_option_restore (struct gcc_options *opts, struct cl_target_option *ptr)
+aarch64_option_restore (struct gcc_options *opts,
+			struct gcc_options */* opts_set */,
+			struct cl_target_option *ptr)
 {
-  opts->x_explicit_tune_core = ptr->x_explicit_tune_core;
-  selected_tune = aarch64_get_tune_cpu (ptr->x_explicit_tune_core);
   opts->x_explicit_arch = ptr->x_explicit_arch;
   selected_arch = aarch64_get_arch (ptr->x_explicit_arch);
+  opts->x_explicit_tune_core = ptr->x_explicit_tune_core;
+  if (opts->x_explicit_tune_core == aarch64_none
+      && opts->x_explicit_arch != aarch64_no_arch)
+    selected_tune = &all_cores[selected_arch->ident];
+  else
+    selected_tune = aarch64_get_tune_cpu (ptr->x_explicit_tune_core);
   opts->x_aarch64_override_tune_string = ptr->x_aarch64_override_tune_string;
   opts->x_aarch64_branch_protection_string
     = ptr->x_aarch64_branch_protection_string;
@@ -15438,7 +17096,8 @@ aarch64_set_current_function (tree fndecl)
   aarch64_previous_fndecl = fndecl;
 
   /* First set the target options.  */
-  cl_target_option_restore (&global_options, TREE_TARGET_OPTION (new_tree));
+  cl_target_option_restore (&global_options, &global_options_set,
+			    TREE_TARGET_OPTION (new_tree));
 
   aarch64_save_restore_target_globals (new_tree);
 }
@@ -15937,17 +17596,18 @@ aarch64_option_valid_attribute_p (tree fndecl, tree, tree args, int)
     }
   tree func_optimize = DECL_FUNCTION_SPECIFIC_OPTIMIZATION (fndecl);
 
-  old_optimize = build_optimization_node (&global_options);
+  old_optimize
+    = build_optimization_node (&global_options, &global_options_set);
   func_optimize = DECL_FUNCTION_SPECIFIC_OPTIMIZATION (fndecl);
 
   /* If the function changed the optimization levels as well as setting
      target options, start with the optimizations specified.  */
   if (func_optimize && func_optimize != old_optimize)
-    cl_optimization_restore (&global_options,
+    cl_optimization_restore (&global_options, &global_options_set,
 			     TREE_OPTIMIZATION (func_optimize));
 
   /* Save the current target options to restore at the end.  */
-  cl_target_option_save (&cur_target, &global_options);
+  cl_target_option_save (&cur_target, &global_options, &global_options_set);
 
   /* If fndecl already has some target attributes applied to it, unpack
      them so that we add this attribute on top of them, rather than
@@ -15958,11 +17618,12 @@ aarch64_option_valid_attribute_p (tree fndecl, tree, tree args, int)
 	= TREE_TARGET_OPTION (existing_target);
 
       if (existing_options)
-	cl_target_option_restore (&global_options, existing_options);
+	cl_target_option_restore (&global_options, &global_options_set,
+				  existing_options);
     }
   else
-    cl_target_option_restore (&global_options,
-			TREE_TARGET_OPTION (target_option_current_node));
+    cl_target_option_restore (&global_options, &global_options_set,
+			      TREE_TARGET_OPTION (target_option_current_node));
 
   ret = aarch64_process_target_attr (args);
 
@@ -15982,12 +17643,14 @@ aarch64_option_valid_attribute_p (tree fndecl, tree, tree args, int)
 	  aarch64_init_simd_builtins ();
 	  current_target_pragma = saved_current_target_pragma;
 	}
-      new_target = build_target_option_node (&global_options);
+      new_target = build_target_option_node (&global_options,
+					     &global_options_set);
     }
   else
     new_target = NULL;
 
-  new_optimize = build_optimization_node (&global_options);
+  new_optimize = build_optimization_node (&global_options,
+					  &global_options_set);
 
   if (fndecl && ret)
     {
@@ -15997,10 +17660,10 @@ aarch64_option_valid_attribute_p (tree fndecl, tree, tree args, int)
 	DECL_FUNCTION_SPECIFIC_OPTIMIZATION (fndecl) = new_optimize;
     }
 
-  cl_target_option_restore (&global_options, &cur_target);
+  cl_target_option_restore (&global_options, &global_options_set, &cur_target);
 
   if (old_optimize != new_optimize)
-    cl_optimization_restore (&global_options,
+    cl_optimization_restore (&global_options, &global_options_set,
 			     TREE_OPTIMIZATION (old_optimize));
   return ret;
 }
@@ -16153,7 +17816,7 @@ aarch64_tls_symbol_p (rtx x)
     return false;
 
   x = strip_salt (x);
-  if (GET_CODE (x) != SYMBOL_REF)
+  if (!SYMBOL_REF_P (x))
     return false;
 
   return SYMBOL_REF_TLS_MODEL (x) != 0;
@@ -16210,7 +17873,7 @@ aarch64_classify_symbol (rtx x, HOST_WIDE_INT offset)
 {
   x = strip_salt (x);
 
-  if (GET_CODE (x) == LABEL_REF)
+  if (LABEL_REF_P (x))
     {
       switch (aarch64_cmodel)
 	{
@@ -16231,7 +17894,7 @@ aarch64_classify_symbol (rtx x, HOST_WIDE_INT offset)
 	}
     }
 
-  if (GET_CODE (x) == SYMBOL_REF)
+  if (SYMBOL_REF_P (x))
     {
       if (aarch64_tls_symbol_p (x))
 	return aarch64_classify_tls_symbol (x);
@@ -16311,7 +17974,7 @@ aarch64_legitimate_pic_operand_p (rtx x)
 {
   poly_int64 offset;
   x = strip_offset_and_salt (x, &offset);
-  if (GET_CODE (x) == SYMBOL_REF)
+  if (SYMBOL_REF_P (x))
     return false;
 
   return true;
@@ -16376,7 +18039,7 @@ aarch64_legitimate_constant_p (machine_mode mode, rtx x)
     return true;
 
   /* Label references are always constant.  */
-  if (GET_CODE (x) == LABEL_REF)
+  if (LABEL_REF_P (x))
     return true;
 
   return false;
@@ -16595,7 +18258,7 @@ aarch64_gimplify_va_arg_expr (tree valist, tree type, gimple_seq *pre_p,
 		  f_stack, NULL_TREE);
   size = int_size_in_bytes (type);
 
-  bool abi_break;
+  unsigned int abi_break;
   align
     = aarch64_function_arg_alignment (mode, type, &abi_break) / BITS_PER_UNIT;
 
@@ -16787,6 +18450,7 @@ aarch64_gimplify_va_arg_expr (tree valist, tree type, gimple_seq *pre_p,
 	}
 
       /* *(field_ptr_t)&ha = *((field_ptr_t)vr_saved_area  */
+      TREE_ADDRESSABLE (tmp_ha) = 1;
       tmp_ha = build1 (ADDR_EXPR, field_ptr_t, tmp_ha);
       addr = t;
       t = fold_convert (field_ptr_t, addr);
@@ -17217,7 +18881,8 @@ aarch64_short_vector_p (const_tree type,
     {
       /* Rely only on the type, not the mode, when processing SVE types.  */
       if (type && aarch64_some_values_include_pst_objects_p (type))
-	gcc_assert (aarch64_sve_mode_p (mode));
+	/* Leave later code to report an error if SVE is disabled.  */
+	gcc_assert (!TARGET_SVE || aarch64_sve_mode_p (mode));
       else
 	size = GET_MODE_SIZE (mode);
     }
@@ -17271,7 +18936,7 @@ aarch64_composite_type_p (const_tree type,
    parameter passing registers are available).
 
    Upon successful return, *COUNT returns the number of needed registers,
-   *BASE_MODE returns the mode of the individual register and when IS_HAF
+   *BASE_MODE returns the mode of the individual register and when IS_HA
    is not NULL, *IS_HA indicates whether or not the argument is a homogeneous
    floating-point aggregate or a homogeneous short-vector aggregate.
 
@@ -17464,8 +19129,6 @@ aarch64_simd_container_mode (scalar_mode mode, poly_int64 width)
   return word_mode;
 }
 
-static HOST_WIDE_INT aarch64_estimated_poly_value (poly_int64);
-
 /* Compare an SVE mode SVE_M and an Advanced SIMD mode ASIMD_M
    and return whether the SVE mode should be preferred over the
    Advanced SIMD one in aarch64_autovectorize_vector_modes.  */
@@ -17498,8 +19161,8 @@ aarch64_cmp_autovec_modes (machine_mode sve_m, machine_mode asimd_m)
     return maybe_gt (nunits_sve, nunits_asimd);
 
   /* Otherwise estimate the runtime width of the modes involved.  */
-  HOST_WIDE_INT est_sve = aarch64_estimated_poly_value (nunits_sve);
-  HOST_WIDE_INT est_asimd = aarch64_estimated_poly_value (nunits_asimd);
+  HOST_WIDE_INT est_sve = estimated_poly_value (nunits_sve);
+  HOST_WIDE_INT est_asimd = estimated_poly_value (nunits_asimd);
 
   /* Preferring SVE means picking it first unless the Advanced SIMD mode
      is clearly wider.  */
@@ -17877,7 +19540,7 @@ aarch64_sve_float_arith_immediate_p (rtx x, bool negate_p)
   REAL_VALUE_TYPE r;
 
   if (!const_vec_duplicate_p (x, &elt)
-      || GET_CODE (elt) != CONST_DOUBLE)
+      || !CONST_DOUBLE_P (elt))
     return false;
 
   r = *CONST_DOUBLE_REAL_VALUE (elt);
@@ -17901,7 +19564,7 @@ aarch64_sve_float_mul_immediate_p (rtx x)
   rtx elt;
 
   return (const_vec_duplicate_p (x, &elt)
-	  && GET_CODE (elt) == CONST_DOUBLE
+	  && CONST_DOUBLE_P (elt)
 	  && (real_equal (CONST_DOUBLE_REAL_VALUE (elt), &dconsthalf)
 	      || real_equal (CONST_DOUBLE_REAL_VALUE (elt), &dconst2)));
 }
@@ -18320,7 +19983,7 @@ aarch64_mov_operand_p (rtx x, machine_mode mode)
     }
 
   x = strip_salt (x);
-  if (GET_CODE (x) == SYMBOL_REF && mode == DImode && CONSTANT_ADDRESS_P (x))
+  if (SYMBOL_REF_P (x) && mode == DImode && CONSTANT_ADDRESS_P (x))
     return true;
 
   if (TARGET_SVE && aarch64_sve_cnt_immediate_p (x))
@@ -18593,11 +20256,11 @@ bool
 aarch64_sve_prefetch_operand_p (rtx op, machine_mode mode)
 {
   struct aarch64_address_info addr;
-  if (!aarch64_classify_address (&addr, op, mode, false))
+  if (!aarch64_classify_address (&addr, op, mode, false, ADDR_QUERY_ANY))
     return false;
 
   if (addr.type == ADDRESS_REG_IMM)
-    return known_eq (addr.const_offset, 0);
+    return offset_6bit_signed_scaled_p (mode, addr.const_offset);
 
   return addr.type == ADDRESS_REG_REG;
 }
@@ -19935,7 +21598,7 @@ aarch64_split_atomic_op (enum rtx_code code, rtx old_out, rtx new_out, rtx mem,
     case MINUS:
       if (CONST_INT_P (value))
 	{
-	  value = GEN_INT (-INTVAL (value));
+	  value = GEN_INT (-UINTVAL (value));
 	  code = PLUS;
 	}
       /* Fall through.  */
@@ -20364,6 +22027,8 @@ struct expand_vec_perm_d
   bool testing_p;
 };
 
+static bool aarch64_expand_vec_perm_const_1 (struct expand_vec_perm_d *d);
+
 /* Generate a variable permutation.  */
 
 static void
@@ -20549,6 +22214,59 @@ aarch64_evpc_trn (struct expand_vec_perm_d *d)
   return true;
 }
 
+/* Try to re-encode the PERM constant so it combines odd and even elements.
+   This rewrites constants such as {0, 1, 4, 5}/V4SF to {0, 2}/V2DI.
+   We retry with this new constant with the full suite of patterns.  */
+static bool
+aarch64_evpc_reencode (struct expand_vec_perm_d *d)
+{
+  expand_vec_perm_d newd;
+  unsigned HOST_WIDE_INT nelt;
+
+  if (d->vec_flags != VEC_ADVSIMD)
+    return false;
+
+  /* Get the new mode.  Always twice the size of the inner
+     and half the elements.  */
+  poly_uint64 vec_bits = GET_MODE_BITSIZE (d->vmode);
+  unsigned int new_elt_bits = GET_MODE_UNIT_BITSIZE (d->vmode) * 2;
+  auto new_elt_mode = int_mode_for_size (new_elt_bits, false).require ();
+  machine_mode new_mode = aarch64_simd_container_mode (new_elt_mode, vec_bits);
+
+  if (new_mode == word_mode)
+    return false;
+
+  /* to_constant is safe since this routine is specific to Advanced SIMD
+     vectors.  */
+  nelt = d->perm.length ().to_constant ();
+
+  vec_perm_builder newpermconst;
+  newpermconst.new_vector (nelt / 2, nelt / 2, 1);
+
+  /* Convert the perm constant if we can.  Require even, odd as the pairs.  */
+  for (unsigned int i = 0; i < nelt; i += 2)
+    {
+      poly_int64 elt0 = d->perm[i];
+      poly_int64 elt1 = d->perm[i + 1];
+      poly_int64 newelt;
+      if (!multiple_p (elt0, 2, &newelt) || maybe_ne (elt0 + 1, elt1))
+	return false;
+      newpermconst.quick_push (newelt.to_constant ());
+    }
+  newpermconst.finalize ();
+
+  newd.vmode = new_mode;
+  newd.vec_flags = VEC_ADVSIMD;
+  newd.target = d->target ? gen_lowpart (new_mode, d->target) : NULL;
+  newd.op0 = d->op0 ? gen_lowpart (new_mode, d->op0) : NULL;
+  newd.op1 = d->op1 ? gen_lowpart (new_mode, d->op1) : NULL;
+  newd.testing_p = d->testing_p;
+  newd.one_vector_p = d->one_vector_p;
+
+  newd.perm.new_vector (newpermconst, newd.one_vector_p ? 1 : 2, nelt / 2);
+  return aarch64_expand_vec_perm_const_1 (&newd);
+}
+
 /* Recognize patterns suitable for the UZP instructions.  */
 static bool
 aarch64_evpc_uzp (struct expand_vec_perm_d *d)
@@ -20688,18 +22406,21 @@ aarch64_evpc_rev_local (struct expand_vec_perm_d *d)
       || !diff)
     return false;
 
-  size = (diff + 1) * GET_MODE_UNIT_SIZE (d->vmode);
-  if (size == 8)
+  if (d->vec_flags & VEC_SVE_DATA)
+    size = (diff + 1) * aarch64_sve_container_bits (d->vmode);
+  else
+    size = (diff + 1) * GET_MODE_UNIT_BITSIZE (d->vmode);
+  if (size == 64)
     {
       unspec = UNSPEC_REV64;
       pred_mode = VNx2BImode;
     }
-  else if (size == 4)
+  else if (size == 32)
     {
       unspec = UNSPEC_REV32;
       pred_mode = VNx4BImode;
     }
-  else if (size == 2)
+  else if (size == 16)
     {
       unspec = UNSPEC_REV16;
       pred_mode = VNx8BImode;
@@ -20716,28 +22437,11 @@ aarch64_evpc_rev_local (struct expand_vec_perm_d *d)
   if (d->testing_p)
     return true;
 
-  if (d->vec_flags == VEC_SVE_DATA)
+  if (d->vec_flags & VEC_SVE_DATA)
     {
-      machine_mode int_mode = aarch64_sve_int_mode (pred_mode);
-      rtx target = gen_reg_rtx (int_mode);
-      if (BYTES_BIG_ENDIAN)
-	/* The act of taking a subreg between INT_MODE and d->vmode
-	   is itself a reversing operation on big-endian targets;
-	   see the comment at the head of aarch64-sve.md for details.
-	   First reinterpret OP0 as INT_MODE without using a subreg
-	   and without changing the contents.  */
-	emit_insn (gen_aarch64_sve_reinterpret (int_mode, target, d->op0));
-      else
-	{
-	  /* For SVE we use REV[BHW] unspecs derived from the element size
-	     of v->mode and vector modes whose elements have SIZE bytes.
-	     This ensures that the vector modes match the predicate modes.  */
-	  int unspec = aarch64_sve_rev_unspec (d->vmode);
-	  rtx pred = aarch64_ptrue_reg (pred_mode);
-	  emit_insn (gen_aarch64_pred (unspec, int_mode, target, pred,
-				       gen_lowpart (int_mode, d->op0)));
-	}
-      emit_move_insn (d->target, gen_lowpart (d->vmode, target));
+      rtx pred = aarch64_ptrue_reg (pred_mode);
+      emit_insn (gen_aarch64_sve_revbhw (d->vmode, pred_mode,
+					 d->target, pred, d->op0));
       return true;
     }
   rtx src = gen_rtx_UNSPEC (d->vmode, gen_rtvec (1, d->op0), unspec);
@@ -20782,7 +22486,8 @@ aarch64_evpc_dup (struct expand_vec_perm_d *d)
       || !d->perm[0].is_constant (&elt))
     return false;
 
-  if (d->vec_flags == VEC_SVE_DATA && elt >= 64 * GET_MODE_UNIT_SIZE (vmode))
+  if ((d->vec_flags & VEC_SVE_DATA)
+      && elt * (aarch64_sve_container_bits (vmode) / 8) >= 64)
     return false;
 
   /* Success! */
@@ -20912,6 +22617,81 @@ aarch64_evpc_sel (struct expand_vec_perm_d *d)
   return true;
 }
 
+/* Recognize patterns suitable for the INS instructions.  */
+static bool
+aarch64_evpc_ins (struct expand_vec_perm_d *d)
+{
+  machine_mode mode = d->vmode;
+  unsigned HOST_WIDE_INT nelt;
+
+  if (d->vec_flags != VEC_ADVSIMD)
+    return false;
+
+  /* to_constant is safe since this routine is specific to Advanced SIMD
+     vectors.  */
+  nelt = d->perm.length ().to_constant ();
+  rtx insv = d->op0;
+
+  HOST_WIDE_INT idx = -1;
+
+  for (unsigned HOST_WIDE_INT i = 0; i < nelt; i++)
+    {
+      HOST_WIDE_INT elt;
+      if (!d->perm[i].is_constant (&elt))
+	return false;
+      if (elt == (HOST_WIDE_INT) i)
+	continue;
+      if (idx != -1)
+	{
+	  idx = -1;
+	  break;
+	}
+      idx = i;
+    }
+
+  if (idx == -1)
+    {
+      insv = d->op1;
+      for (unsigned HOST_WIDE_INT i = 0; i < nelt; i++)
+	{
+	  if (d->perm[i].to_constant () == (HOST_WIDE_INT) (i + nelt))
+	    continue;
+	  if (idx != -1)
+	    return false;
+	  idx = i;
+	}
+
+      if (idx == -1)
+	return false;
+    }
+
+  if (d->testing_p)
+    return true;
+
+  gcc_assert (idx != -1);
+
+  unsigned extractindex = d->perm[idx].to_constant ();
+  rtx extractv = d->op0;
+  if (extractindex >= nelt)
+    {
+      extractv = d->op1;
+      extractindex -= nelt;
+    }
+  gcc_assert (extractindex < nelt);
+
+  emit_move_insn (d->target, insv);
+  insn_code icode = code_for_aarch64_simd_vec_copy_lane (mode);
+  expand_operand ops[5];
+  create_output_operand (&ops[0], d->target, mode);
+  create_input_operand (&ops[1], d->target, mode);
+  create_integer_operand (&ops[2], 1 << idx);
+  create_input_operand (&ops[3], extractv, mode);
+  create_integer_operand (&ops[4], extractindex);
+  expand_insn (icode, 5, ops);
+
+  return true;
+}
+
 static bool
 aarch64_expand_vec_perm_const_1 (struct expand_vec_perm_d *d)
 {
@@ -20927,6 +22707,7 @@ aarch64_expand_vec_perm_const_1 (struct expand_vec_perm_d *d)
 
   if ((d->vec_flags == VEC_ADVSIMD
        || d->vec_flags == VEC_SVE_DATA
+       || d->vec_flags == (VEC_SVE_DATA | VEC_PARTIAL)
        || d->vec_flags == VEC_SVE_PRED)
       && known_gt (nelt, 1))
     {
@@ -20945,6 +22726,10 @@ aarch64_expand_vec_perm_const_1 (struct expand_vec_perm_d *d)
       else if (aarch64_evpc_trn (d))
 	return true;
       else if (aarch64_evpc_sel (d))
+	return true;
+      else if (aarch64_evpc_ins (d))
+	return true;
+      else if (aarch64_evpc_reencode (d))
 	return true;
       if (d->vec_flags == VEC_SVE_DATA)
 	return aarch64_evpc_sve_tbl (d);
@@ -20984,8 +22769,11 @@ aarch64_vectorize_vec_perm_const (machine_mode vmode, rtx target, rtx op0,
   d.vmode = vmode;
   d.vec_flags = aarch64_classify_vector_mode (d.vmode);
   d.target = target;
-  d.op0 = op0;
-  d.op1 = op1;
+  d.op0 = op0 ? force_reg (vmode, op0) : NULL_RTX;
+  if (op0 == op1)
+    d.op1 = d.op0;
+  else
+    d.op1 = op1 ? force_reg (vmode, op1) : NULL_RTX;
   d.testing_p = !target;
 
   if (!d.testing_p)
@@ -21307,6 +23095,27 @@ static void
 aarch64_copy_one_block_and_progress_pointers (rtx *src, rtx *dst,
 					      machine_mode mode)
 {
+  /* Handle 256-bit memcpy separately.  We do this by making 2 adjacent memory
+     address copies using V4SImode so that we can use Q registers.  */
+  if (known_eq (GET_MODE_BITSIZE (mode), 256))
+    {
+      mode = V4SImode;
+      rtx reg1 = gen_reg_rtx (mode);
+      rtx reg2 = gen_reg_rtx (mode);
+      /* "Cast" the pointers to the correct mode.  */
+      *src = adjust_address (*src, mode, 0);
+      *dst = adjust_address (*dst, mode, 0);
+      /* Emit the memcpy.  */
+      emit_insn (aarch64_gen_load_pair (mode, reg1, *src, reg2,
+					aarch64_progress_pointer (*src)));
+      emit_insn (aarch64_gen_store_pair (mode, *dst, reg1,
+					 aarch64_progress_pointer (*dst), reg2));
+      /* Move the pointers forward.  */
+      *src = aarch64_move_pointer (*src, 32);
+      *dst = aarch64_move_pointer (*dst, 32);
+      return;
+    }
+
   rtx reg = gen_reg_rtx (mode);
 
   /* "Cast" the pointers to the correct mode.  */
@@ -21326,35 +23135,39 @@ aarch64_copy_one_block_and_progress_pointers (rtx *src, rtx *dst,
 bool
 aarch64_expand_cpymem (rtx *operands)
 {
-  /* These need to be signed as we need to perform arithmetic on n as
-     signed operations.  */
-  int n, mode_bits;
+  int mode_bits;
   rtx dst = operands[0];
   rtx src = operands[1];
   rtx base;
-  machine_mode cur_mode = BLKmode, next_mode;
-  bool speed_p = !optimize_function_for_size_p (cfun);
+  machine_mode cur_mode = BLKmode;
 
-  /* When optimizing for size, give a better estimate of the length of a
-     memcpy call, but use the default otherwise.  Moves larger than 8 bytes
-     will always require an even number of instructions to do now.  And each
-     operation requires both a load+store, so divide the max number by 2.  */
-  unsigned int max_num_moves = (speed_p ? 16 : AARCH64_CALL_RATIO) / 2;
-
-  /* We can't do anything smart if the amount to copy is not constant.  */
+  /* Only expand fixed-size copies.  */
   if (!CONST_INT_P (operands[2]))
     return false;
 
-  unsigned HOST_WIDE_INT tmp = INTVAL (operands[2]);
+  unsigned HOST_WIDE_INT size = INTVAL (operands[2]);
 
-  /* Try to keep the number of instructions low.  For all cases we will do at
-     most two moves for the residual amount, since we'll always overlap the
-     remainder.  */
-  if (((tmp / 16) + (tmp % 16 ? 2 : 0)) > max_num_moves)
+  /* Inline up to 256 bytes when optimizing for speed.  */
+  unsigned HOST_WIDE_INT max_copy_size = 256;
+
+  if (optimize_function_for_size_p (cfun))
+    max_copy_size = 128;
+
+  int copy_bits = 256;
+
+  /* Default to 256-bit LDP/STP on large copies, however small copies, no SIMD
+     support or slow 256-bit LDP/STP fall back to 128-bit chunks.  */
+  if (size <= 24
+      || !TARGET_SIMD
+      || (aarch64_tune_params.extra_tuning_flags
+	  & AARCH64_EXTRA_TUNE_NO_LDP_STP_QREGS))
+    {
+      copy_bits = 128;
+      max_copy_size = max_copy_size / 2;
+    }
+
+  if (size > max_copy_size)
     return false;
-
-  /* At this point tmp is known to have to fit inside an int.  */
-  n = tmp;
 
   base = copy_to_mode_reg (Pmode, XEXP (dst, 0));
   dst = adjust_automodify_address (dst, VOIDmode, base, 0);
@@ -21362,12 +23175,8 @@ aarch64_expand_cpymem (rtx *operands)
   base = copy_to_mode_reg (Pmode, XEXP (src, 0));
   src = adjust_automodify_address (src, VOIDmode, base, 0);
 
-  /* Convert n to bits to make the rest of the code simpler.  */
-  n = n * BITS_PER_UNIT;
-
-  /* Maximum amount to copy in one go.  The AArch64 back-end has integer modes
-     larger than TImode, but we should not use them for loads/stores here.  */
-  const int copy_limit = GET_MODE_BITSIZE (TImode);
+  /* Convert size to bits to make the rest of the code simpler.  */
+  int n = size * BITS_PER_UNIT;
 
   while (n > 0)
     {
@@ -21375,24 +23184,28 @@ aarch64_expand_cpymem (rtx *operands)
 	 or writing.  */
       opt_scalar_int_mode mode_iter;
       FOR_EACH_MODE_IN_CLASS (mode_iter, MODE_INT)
-	if (GET_MODE_BITSIZE (mode_iter.require ()) <= MIN (n, copy_limit))
+	if (GET_MODE_BITSIZE (mode_iter.require ()) <= MIN (n, copy_bits))
 	  cur_mode = mode_iter.require ();
 
       gcc_assert (cur_mode != BLKmode);
 
       mode_bits = GET_MODE_BITSIZE (cur_mode).to_constant ();
+
+      /* Prefer Q-register accesses for the last bytes.  */
+      if (mode_bits == 128 && copy_bits == 256)
+	cur_mode = V4SImode;
+
       aarch64_copy_one_block_and_progress_pointers (&src, &dst, cur_mode);
 
       n -= mode_bits;
 
-      /* Do certain trailing copies as overlapping if it's going to be
-	 cheaper.  i.e. less instructions to do so.  For instance doing a 15
-	 byte copy it's more efficient to do two overlapping 8 byte copies than
-	 8 + 6 + 1.  */
-      if (n > 0 && n <= 8 * BITS_PER_UNIT)
+      /* Emit trailing copies using overlapping unaligned accesses - this is
+	 smaller and faster.  */
+      if (n > 0 && n < copy_bits / 2)
 	{
-	  next_mode = smallest_mode_for_size (n, MODE_INT);
+	  machine_mode next_mode = smallest_mode_for_size (n, MODE_INT);
 	  int n_bits = GET_MODE_BITSIZE (next_mode).to_constant ();
+	  gcc_assert (n_bits <= mode_bits);
 	  src = aarch64_move_pointer (src, (n - n_bits) / BITS_PER_UNIT);
 	  dst = aarch64_move_pointer (dst, (n - n_bits) / BITS_PER_UNIT);
 	  n = n_bits;
@@ -21401,6 +23214,135 @@ aarch64_expand_cpymem (rtx *operands)
 
   return true;
 }
+
+/* Like aarch64_copy_one_block_and_progress_pointers, except for memset where
+   SRC is a register we have created with the duplicated value to be set.  */
+static void
+aarch64_set_one_block_and_progress_pointer (rtx src, rtx *dst,
+					    machine_mode mode)
+{
+  /* If we are copying 128bits or 256bits, we can do that straight from
+     the SIMD register we prepared.  */
+  if (known_eq (GET_MODE_BITSIZE (mode), 256))
+    {
+      mode = GET_MODE (src);
+      /* "Cast" the *dst to the correct mode.  */
+      *dst = adjust_address (*dst, mode, 0);
+      /* Emit the memset.  */
+      emit_insn (aarch64_gen_store_pair (mode, *dst, src,
+					 aarch64_progress_pointer (*dst), src));
+
+      /* Move the pointers forward.  */
+      *dst = aarch64_move_pointer (*dst, 32);
+      return;
+    }
+  if (known_eq (GET_MODE_BITSIZE (mode), 128))
+    {
+      /* "Cast" the *dst to the correct mode.  */
+      *dst = adjust_address (*dst, GET_MODE (src), 0);
+      /* Emit the memset.  */
+      emit_move_insn (*dst, src);
+      /* Move the pointers forward.  */
+      *dst = aarch64_move_pointer (*dst, 16);
+      return;
+    }
+  /* For copying less, we have to extract the right amount from src.  */
+  rtx reg = lowpart_subreg (mode, src, GET_MODE (src));
+
+  /* "Cast" the *dst to the correct mode.  */
+  *dst = adjust_address (*dst, mode, 0);
+  /* Emit the memset.  */
+  emit_move_insn (*dst, reg);
+  /* Move the pointer forward.  */
+  *dst = aarch64_progress_pointer (*dst);
+}
+
+/* Expand setmem, as if from a __builtin_memset.  Return true if
+   we succeed, otherwise return false.  */
+
+bool
+aarch64_expand_setmem (rtx *operands)
+{
+  int n, mode_bits;
+  unsigned HOST_WIDE_INT len;
+  rtx dst = operands[0];
+  rtx val = operands[2], src;
+  rtx base;
+  machine_mode cur_mode = BLKmode, next_mode;
+
+  /* We can't do anything smart if the amount to copy is not constant.  */
+  if (!CONST_INT_P (operands[1]))
+    return false;
+
+  bool speed_p = !optimize_function_for_size_p (cfun);
+
+  /* Default the maximum to 256-bytes.  */
+  unsigned max_set_size = 256;
+
+  /* In case we are optimizing for size or if the core does not
+     want to use STP Q regs, lower the max_set_size.  */
+  max_set_size = (!speed_p
+		  || (aarch64_tune_params.extra_tuning_flags
+		      & AARCH64_EXTRA_TUNE_NO_LDP_STP_QREGS))
+		  ? max_set_size / 2 : max_set_size;
+
+  len = INTVAL (operands[1]);
+
+  /* Upper bound check.  */
+  if (len > max_set_size)
+    return false;
+
+  base = copy_to_mode_reg (Pmode, XEXP (dst, 0));
+  dst = adjust_automodify_address (dst, VOIDmode, base, 0);
+
+  /* Prepare the val using a DUP/MOVI v0.16B, val.  */
+  src = expand_vector_broadcast (V16QImode, val);
+  src = force_reg (V16QImode, src);
+
+  /* Convert len to bits to make the rest of the code simpler.  */
+  n = len * BITS_PER_UNIT;
+
+  /* Maximum amount to copy in one go.  We allow 256-bit chunks based on the
+     AARCH64_EXTRA_TUNE_NO_LDP_STP_QREGS tuning parameter.  setmem expand
+     pattern is only turned on for TARGET_SIMD.  */
+  const int copy_limit = (speed_p
+			  && (aarch64_tune_params.extra_tuning_flags
+			      & AARCH64_EXTRA_TUNE_NO_LDP_STP_QREGS))
+			  ? GET_MODE_BITSIZE (TImode) : 256;
+
+  while (n > 0)
+    {
+      /* Find the largest mode in which to do the copy without
+	 over writing.  */
+      opt_scalar_int_mode mode_iter;
+      FOR_EACH_MODE_IN_CLASS (mode_iter, MODE_INT)
+	if (GET_MODE_BITSIZE (mode_iter.require ()) <= MIN (n, copy_limit))
+	  cur_mode = mode_iter.require ();
+
+      gcc_assert (cur_mode != BLKmode);
+
+      mode_bits = GET_MODE_BITSIZE (cur_mode).to_constant ();
+      aarch64_set_one_block_and_progress_pointer (src, &dst, cur_mode);
+
+      n -= mode_bits;
+
+      /* Do certain trailing copies as overlapping if it's going to be
+	 cheaper.  i.e. less instructions to do so.  For instance doing a 15
+	 byte copy it's more efficient to do two overlapping 8 byte copies than
+	 8 + 4 + 2 + 1.  */
+      if (n > 0 && n < copy_limit / 2)
+	{
+	  next_mode = smallest_mode_for_size (n, MODE_INT);
+	  int n_bits = GET_MODE_BITSIZE (next_mode).to_constant ();
+	  gcc_assert (n_bits <= mode_bits);
+	  dst = aarch64_move_pointer (dst, (n - n_bits) / BITS_PER_UNIT);
+	  n = n_bits;
+	}
+    }
+
+  return true;
+}
+
 
 /* Split a DImode store of a CONST_INT SRC to MEM DST as two
    SImode stores.  Handle the case when the constant has identical
@@ -21572,7 +23514,7 @@ aarch64_expand_subvti (rtx op0, rtx low_dest, rtx low_in1,
     {
       if (aarch64_plus_immediate (low_in2, DImode))
 	emit_insn (gen_subdi3_compare1_imm (low_dest, low_in1, low_in2,
-					    GEN_INT (-INTVAL (low_in2))));
+					    GEN_INT (-UINTVAL (low_in2))));
       else
 	{
 	  low_in2 = force_reg (DImode, low_in2);
@@ -22077,20 +24019,20 @@ fusion_load_store (rtx_insn *insn, rtx *base, rtx *offset)
     {
       fusion = SCHED_FUSION_LD_SIGN_EXTEND;
       src = XEXP (src, 0);
-      if (GET_CODE (src) != MEM || GET_MODE (src) != SImode)
+      if (!MEM_P (src) || GET_MODE (src) != SImode)
 	return SCHED_FUSION_NONE;
     }
   else if (GET_CODE (src) == ZERO_EXTEND)
     {
       fusion = SCHED_FUSION_LD_ZERO_EXTEND;
       src = XEXP (src, 0);
-      if (GET_CODE (src) != MEM || GET_MODE (src) != SImode)
+      if (!MEM_P (src) || GET_MODE (src) != SImode)
 	return SCHED_FUSION_NONE;
     }
 
-  if (GET_CODE (src) == MEM && REG_P (dest))
+  if (MEM_P (src) && REG_P (dest))
     extract_base_offset_in_addr (src, base, offset);
-  else if (GET_CODE (dest) == MEM && (REG_P (src) || src == const0_rtx))
+  else if (MEM_P (dest) && (REG_P (src) || src == const0_rtx))
     {
       fusion = SCHED_FUSION_ST;
       extract_base_offset_in_addr (dest, base, offset);
@@ -22373,7 +24315,7 @@ aarch64_ldrstr_offset_compare (const void *x, const void *y)
 
 bool
 aarch64_operands_adjust_ok_for_ldpstp (rtx *operands, bool load,
-				       scalar_mode mode)
+				       machine_mode mode)
 {
   const int num_insns = 4;
   enum reg_class rclass;
@@ -22450,7 +24392,7 @@ aarch64_operands_adjust_ok_for_ldpstp (rtx *operands, bool load,
   for (int i = 0; i < num_insns; i++)
     offvals[i] = INTVAL (offset[i]);
 
-  msize = GET_MODE_SIZE (mode);
+  msize = GET_MODE_SIZE (mode).to_constant ();
 
   /* Check if the offsets can be put in the right order to do a ldp/stp.  */
   qsort (offvals, num_insns, sizeof (HOST_WIDE_INT),
@@ -22490,7 +24432,7 @@ aarch64_operands_adjust_ok_for_ldpstp (rtx *operands, bool load,
 
 bool
 aarch64_gen_adjusted_ldpstp (rtx *operands, bool load,
-			     scalar_mode mode, RTX_CODE code)
+			     machine_mode mode, RTX_CODE code)
 {
   rtx base, offset_1, offset_3, t1, t2;
   rtx mem_1, mem_2, mem_3, mem_4;
@@ -22529,7 +24471,7 @@ aarch64_gen_adjusted_ldpstp (rtx *operands, bool load,
 	      && offset_3 != NULL_RTX);
 
   /* Adjust offset so it can fit in LDP/STP instruction.  */
-  msize = GET_MODE_SIZE (mode);
+  msize = GET_MODE_SIZE (mode).to_constant();
   stp_off_upper_limit = msize * (0x40 - 1);
   stp_off_lower_limit = - msize * 0x40;
 
@@ -23018,19 +24960,38 @@ aarch64_speculation_safe_value (machine_mode mode,
 
 /* Implement TARGET_ESTIMATED_POLY_VALUE.
    Look into the tuning structure for an estimate.
-   VAL.coeffs[1] is multiplied by the number of VQ chunks over the initial
-   Advanced SIMD 128 bits.  */
+   KIND specifies the type of requested estimate: min, max or likely.
+   For cores with a known SVE width all three estimates are the same.
+   For generic SVE tuning we want to distinguish the maximum estimate from
+   the minimum and likely ones.
+   The likely estimate is the same as the minimum in that case to give a
+   conservative behavior of auto-vectorizing with SVE when it is a win
+   even for 128-bit SVE.
+   When SVE width information is available VAL.coeffs[1] is multiplied by
+   the number of VQ chunks over the initial Advanced SIMD 128 bits.  */
 
 static HOST_WIDE_INT
-aarch64_estimated_poly_value (poly_int64 val)
+aarch64_estimated_poly_value (poly_int64 val,
+			      poly_value_estimate_kind kind
+				= POLY_VALUE_LIKELY)
 {
   enum aarch64_sve_vector_bits_enum width_source
     = aarch64_tune_params.sve_width;
 
-  /* If we still don't have an estimate, use the default.  */
+  /* If there is no core-specific information then the minimum and likely
+     values are based on 128-bit vectors and the maximum is based on
+     the architectural maximum of 2048 bits.  */
   if (width_source == SVE_SCALABLE)
-    return default_estimated_poly_value (val);
+    switch (kind)
+      {
+      case POLY_VALUE_MIN:
+      case POLY_VALUE_LIKELY:
+	return val.coeffs[0];
+      case POLY_VALUE_MAX:
+	  return val.coeffs[0] + val.coeffs[1] * 15;
+      }
 
+  /* If the core provides width information, use that.  */
   HOST_WIDE_INT over_128 = width_source - 128;
   return val.coeffs[0] + val.coeffs[1] * over_128 / 128;
 }
@@ -23072,19 +25033,24 @@ aarch64_simd_clone_compute_vecsize_and_simdlen (struct cgraph_node *node,
 					struct cgraph_simd_clone *clonei,
 					tree base_type, int num)
 {
-  tree t, ret_type, arg_type;
-  unsigned int elt_bits, vec_bits, count;
+  tree t, ret_type;
+  unsigned int elt_bits, count;
+  unsigned HOST_WIDE_INT const_simdlen;
+  poly_uint64 vec_bits;
 
   if (!TARGET_SIMD)
     return 0;
 
-  if (clonei->simdlen
-      && (clonei->simdlen < 2
-	  || clonei->simdlen > 1024
-	  || (clonei->simdlen & (clonei->simdlen - 1)) != 0))
+  /* For now, SVE simdclones won't produce illegal simdlen, So only check
+     const simdlens here.  */
+  if (maybe_ne (clonei->simdlen, 0U)
+      && clonei->simdlen.is_constant (&const_simdlen)
+      && (const_simdlen < 2
+	  || const_simdlen > 1024
+	  || (const_simdlen & (const_simdlen - 1)) != 0))
     {
       warning_at (DECL_SOURCE_LOCATION (node->decl), 0,
-		  "unsupported simdlen %d", clonei->simdlen);
+		  "unsupported simdlen %wd", const_simdlen);
       return 0;
     }
 
@@ -23134,21 +25100,24 @@ aarch64_simd_clone_compute_vecsize_and_simdlen (struct cgraph_node *node,
   clonei->vecsize_mangle = 'n';
   clonei->mask_mode = VOIDmode;
   elt_bits = GET_MODE_BITSIZE (SCALAR_TYPE_MODE (base_type));
-  if (clonei->simdlen == 0)
+  if (known_eq (clonei->simdlen, 0U))
     {
       count = 2;
       vec_bits = (num == 0 ? 64 : 128);
-      clonei->simdlen = vec_bits / elt_bits;
+      clonei->simdlen = exact_div (vec_bits, elt_bits);
     }
   else
     {
       count = 1;
       vec_bits = clonei->simdlen * elt_bits;
-      if (vec_bits != 64 && vec_bits != 128)
+      /* For now, SVE simdclones won't produce illegal simdlen, So only check
+	 const simdlens here.  */
+      if (clonei->simdlen.is_constant (&const_simdlen)
+	  && maybe_ne (vec_bits, 64U) && maybe_ne (vec_bits, 128U))
 	{
 	  warning_at (DECL_SOURCE_LOCATION (node->decl), 0,
-		      "GCC does not currently support simdlen %d for type %qT",
-		      clonei->simdlen, base_type);
+		      "GCC does not currently support simdlen %wd for type %qT",
+		      const_simdlen, base_type);
 	  return 0;
 	}
     }
@@ -23191,8 +25160,22 @@ aarch64_simd_clone_usable (struct cgraph_node *node)
 static int
 aarch64_comp_type_attributes (const_tree type1, const_tree type2)
 {
-  if (lookup_attribute ("aarch64_vector_pcs", TYPE_ATTRIBUTES (type1))
-      != lookup_attribute ("aarch64_vector_pcs", TYPE_ATTRIBUTES (type2)))
+  auto check_attr = [&](const char *name) {
+    tree attr1 = lookup_attribute (name, TYPE_ATTRIBUTES (type1));
+    tree attr2 = lookup_attribute (name, TYPE_ATTRIBUTES (type2));
+    if (!attr1 && !attr2)
+      return true;
+
+    return attr1 && attr2 && attribute_value_equal (attr1, attr2);
+  };
+
+  if (!check_attr ("aarch64_vector_pcs"))
+    return 0;
+  if (!check_attr ("Advanced SIMD type"))
+    return 0;
+  if (!check_attr ("SVE type"))
+    return 0;
+  if (!check_attr ("SVE sizeless type"))
     return 0;
   return 1;
 }
@@ -23274,6 +25257,15 @@ aarch64_invalid_binary_op (int op ATTRIBUTE_UNUSED, const_tree type1,
 
   /* Operation allowed.  */
   return NULL;
+}
+
+/* Implement TARGET_MEMTAG_CAN_TAG_ADDRESSES.  Here we tell the rest of the
+   compiler that we automatically ignore the top byte of our pointers, which
+   allows using -fsanitize=hwaddress.  */
+bool
+aarch64_can_tag_addresses ()
+{
+  return !TARGET_ILP32;
 }
 
 /* Implement TARGET_ASM_FILE_END for AArch64.  This adds the AArch64 GNU NOTE
@@ -23791,6 +25783,9 @@ aarch64_libgcc_floating_mode_supported_p
 #define TARGET_OVERRIDE_OPTIONS_AFTER_CHANGE \
   aarch64_override_options_after_change
 
+#undef TARGET_OFFLOAD_OPTIONS
+#define TARGET_OFFLOAD_OPTIONS aarch64_offload_options
+
 #undef TARGET_OPTION_SAVE
 #define TARGET_OPTION_SAVE aarch64_option_save
 
@@ -23905,8 +25900,17 @@ aarch64_libgcc_floating_mode_supported_p
 #undef TARGET_ARRAY_MODE_SUPPORTED_P
 #define TARGET_ARRAY_MODE_SUPPORTED_P aarch64_array_mode_supported_p
 
+#undef TARGET_VECTORIZE_INIT_COST
+#define TARGET_VECTORIZE_INIT_COST aarch64_init_cost
+
 #undef TARGET_VECTORIZE_ADD_STMT_COST
 #define TARGET_VECTORIZE_ADD_STMT_COST aarch64_add_stmt_cost
+
+#undef TARGET_VECTORIZE_FINISH_COST
+#define TARGET_VECTORIZE_FINISH_COST aarch64_finish_cost
+
+#undef TARGET_VECTORIZE_DESTROY_COST_DATA
+#define TARGET_VECTORIZE_DESTROY_COST_DATA aarch64_destroy_cost_data
 
 #undef TARGET_VECTORIZE_BUILTIN_VECTORIZATION_COST
 #define TARGET_VECTORIZE_BUILTIN_VECTORIZATION_COST \
@@ -24091,6 +26095,9 @@ aarch64_libgcc_floating_mode_supported_p
 
 #undef TARGET_FNTYPE_ABI
 #define TARGET_FNTYPE_ABI aarch64_fntype_abi
+
+#undef TARGET_MEMTAG_CAN_TAG_ADDRESSES
+#define TARGET_MEMTAG_CAN_TAG_ADDRESSES aarch64_can_tag_addresses
 
 #if CHECKING_P
 #undef TARGET_RUN_TARGET_SELFTESTS

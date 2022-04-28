@@ -1,5 +1,5 @@
 /* ACLE support for AArch64 SVE
-   Copyright (C) 2018-2020 Free Software Foundation, Inc.
+   Copyright (C) 2018-2021 Free Software Foundation, Inc.
 
    This file is part of GCC.
 
@@ -879,6 +879,9 @@ sve_switcher::sve_switcher ()
   aarch64_isa_flags = (AARCH64_FL_FP | AARCH64_FL_SIMD | AARCH64_FL_F16
 		       | AARCH64_FL_SVE);
 
+  m_old_maximum_field_alignment = maximum_field_alignment;
+  maximum_field_alignment = 0;
+
   m_old_general_regs_only = TARGET_GENERAL_REGS_ONLY;
   global_options.x_target_flags &= ~MASK_GENERAL_REGS_ONLY;
 
@@ -896,6 +899,7 @@ sve_switcher::~sve_switcher ()
   if (m_old_general_regs_only)
     global_options.x_target_flags |= MASK_GENERAL_REGS_ONLY;
   aarch64_isa_flags = m_old_isa_flags;
+  maximum_field_alignment = m_old_maximum_field_alignment;
 }
 
 function_builder::function_builder ()
@@ -2805,7 +2809,7 @@ function_expander::add_output_operand (insn_code icode)
 {
   unsigned int opno = m_ops.length ();
   machine_mode mode = insn_data[icode].operand[opno].mode;
-  m_ops.safe_grow (opno + 1);
+  m_ops.safe_grow (opno + 1, true);
   create_output_operand (&m_ops.last (), possible_target, mode);
 }
 
@@ -2842,7 +2846,7 @@ function_expander::add_input_operand (insn_code icode, rtx x)
       gcc_assert (GET_MODE (x) == VNx16BImode);
       x = gen_lowpart (mode, x);
     }
-  m_ops.safe_grow (m_ops.length () + 1);
+  m_ops.safe_grow (m_ops.length () + 1, true);
   create_input_operand (&m_ops.last (), x, mode);
 }
 
@@ -2850,7 +2854,7 @@ function_expander::add_input_operand (insn_code icode, rtx x)
 void
 function_expander::add_integer_operand (HOST_WIDE_INT x)
 {
-  m_ops.safe_grow (m_ops.length () + 1);
+  m_ops.safe_grow (m_ops.length () + 1, true);
   create_integer_operand (&m_ops.last (), x);
 }
 
@@ -2874,7 +2878,7 @@ function_expander::add_mem_operand (machine_mode mode, rtx addr)
 void
 function_expander::add_address_operand (rtx x)
 {
-  m_ops.safe_grow (m_ops.length () + 1);
+  m_ops.safe_grow (m_ops.length () + 1, true);
   create_address_operand (&m_ops.last (), x);
 }
 
@@ -2883,7 +2887,7 @@ function_expander::add_address_operand (rtx x)
 void
 function_expander::add_fixed_operand (rtx x)
 {
-  m_ops.safe_grow (m_ops.length () + 1);
+  m_ops.safe_grow (m_ops.length () + 1, true);
   create_fixed_operand (&m_ops.last (), x);
 }
 
