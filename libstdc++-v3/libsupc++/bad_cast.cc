@@ -23,6 +23,8 @@
 
 #include <typeinfo>
 
+#define __EXCSTR(s) (__extension__({static const char __exception_what__[] __attribute__((section(".irom.exceptiontext,\"MS\",@progbits,1#"))) = (s); &__exception_what__[0];}))
+
 namespace std {
 
 bad_cast::~bad_cast() _GLIBCXX_USE_NOEXCEPT { }
@@ -30,7 +32,7 @@ bad_cast::~bad_cast() _GLIBCXX_USE_NOEXCEPT { }
 const char* 
 bad_cast::what() const _GLIBCXX_USE_NOEXCEPT
 {
-  return "std::bad_cast";
+  return __EXCSTR("std::bad_cast");
 }
 
 } // namespace std
