@@ -1,5 +1,5 @@
 ;; GCC machine description for Tensilica's Xtensa architecture.
-;; Copyright (C) 2001-2022 Free Software Foundation, Inc.
+;; Copyright (C) 2001-2021 Free Software Foundation, Inc.
 ;; Contributed by Bob Wilson (bwilson@tensilica.com) at Tensilica.
 
 ;; This file is part of GCC.
@@ -94,6 +94,10 @@
   "unknown,none,QI,HI,SI,DI,SF,DF,BL"
   (const_string "unknown"))
 
+(define_attr "condjmp"
+  "na,cond,uncond"
+  (const_string "na"))
+
 (define_attr "length" "" (const_int 1))
 
 ;; Describe a user's asm statement.
@@ -109,13 +113,37 @@
 ;; reservations in the pipeline description below.  The Xtensa can
 ;; issue one instruction per cycle, so defining CPU units is unnecessary.
 
+(define_cpu_unit "loadstore")
+
 (define_insn_reservation "xtensa_any_insn" 1
-			 (eq_attr "type" "!load,fload,rsr,mul16,mul32,fmadd,fconv")
+			 (eq_attr "type" "!load,fload,store,fstore,rsr,mul16,mul32,fmadd,fconv")
 			 "nothing")
 
-(define_insn_reservation "xtensa_memory" 2
-			 (eq_attr "type" "load,fload")
+(define_insn_reservation "xtensa_memory_load" 2
+			 (and (not (match_test "TARGET_ESP32_PSRAM_FIX_ENA"))
+			 (eq_attr "type" "load,fload"))
 			 "nothing")
+
+(define_insn_reservation "xtensa_memory_store" 1
+			 (and (not (match_test "TARGET_ESP32_PSRAM_FIX_ENA"))
+			 (eq_attr "type" "store,fstore"))
+			 "nothing")
+
+;; If psram cache issue needs fixing, it's better to keep 
+;; stores far from loads from the same address. We cannot encode
+;; that behaviour entirely here (or maybe we can, but at least 
+;; not easily), but we can try to get everything that smells like 
+;; load or store up to a pipeline length apart from each other.
+
+(define_insn_reservation "xtensa_memory_load_psram_fix" 2
+			 (and (match_test "TARGET_ESP32_PSRAM_FIX_ENA")
+			 (eq_attr "type" "load,fload"))
+			 "loadstore*5")
+
+(define_insn_reservation "xtensa_memory_store_psram_fix" 1
+			 (and (match_test "TARGET_ESP32_PSRAM_FIX_ENA")
+			 (eq_attr "type" "store,fstore"))
+			 "loadstore*5")
 
 (define_insn_reservation "xtensa_sreg" 2
 			 (eq_attr "type" "rsr")
@@ -560,28 +588,26 @@
 ;; Zero-extend instructions.
 
 (define_insn "zero_extendhisi2"
-  [(set (match_operand:SI 0 "register_operand" "=a,a,a")
-	(zero_extend:SI (match_operand:HI 1 "nonimmed_operand" "r,ZY,ZZ")))]
+  [(set (match_operand:SI 0 "register_operand" "=a,a")
+	(zero_extend:SI (match_operand:HI 1 "nonimmed_operand" "r,U")))]
   ""
   "@
    extui\t%0, %1, 0, 16
-   %v1l16ui\t%0, %1
-   ssa8l\t%B1 ; srli\t%0, %B1, 2 ; slli\t%0, %0, 2 ; l32i\t%0, %0, 0 ; srl\t%0, %0 ; extui\t%0, %0, 0, 16"
-  [(set_attr "type"	"arith,load,load")
+   %v1l16ui\t%0, %1"
+  [(set_attr "type"	"arith,load")
    (set_attr "mode"	"SI")
-   (set_attr "length"	"3,3,18")])
+   (set_attr "length"	"3,3")])
 
 (define_insn "zero_extendqisi2"
-  [(set (match_operand:SI 0 "register_operand" "=a,a,a")
-	(zero_extend:SI (match_operand:QI 1 "nonimmed_operand" "r,ZY,ZZ")))]
+  [(set (match_operand:SI 0 "register_operand" "=a,a")
+	(zero_extend:SI (match_operand:QI 1 "nonimmed_operand" "r,U")))]
   ""
   "@
    extui\t%0, %1, 0, 8
-   l8ui\t%0, %1
-   ssa8l\t%B1 ; srli\t%0, %B1, 2 ; slli\t%0, %0, 2 ; l32i\t%0, %0, 0 ; srl\t%0, %0 ; extui\t%0, %0, 0, 8"
-  [(set_attr "type"	"arith,load,load")
+   %v1l8ui\t%0, %1"
+  [(set_attr "type"	"arith,load")
    (set_attr "mode"	"SI")
-   (set_attr "length"	"3,3,18")])
+   (set_attr "length"	"3,3")])
 
 
 ;; Sign-extend instructions.
@@ -599,15 +625,15 @@
 })
 
 (define_insn "extendhisi2_internal"
-  [(set (match_operand:SI 0 "register_operand" "=B,a,a")
-       (sign_extend:SI (match_operand:HI 1 "sext_operand" "r,r,ZY")))]
+  [(set (match_operand:SI 0 "register_operand" "=B,a")
+	(sign_extend:SI (match_operand:HI 1 "sext_operand" "r,U")))]
   ""
   "@
    sext\t%0, %1, 15
    %v1l16si\t%0, %1"
-  [(set_attr "type"	"arith,arith,load")
+  [(set_attr "type"	"arith,load")
    (set_attr "mode"	"SI")
-   (set_attr "length"	"3,6,3")])
+   (set_attr "length"	"3,3")])
 
 (define_expand "extendqisi2"
   [(set (match_operand:SI 0 "register_operand" "")
@@ -781,7 +807,7 @@
   "register_operand (operands[0], DImode)
    || register_operand (operands[1], DImode)"
   "#"
-  "&& reload_completed"
+  "reload_completed"
   [(set (match_dup 0) (match_dup 2))
    (set (match_dup 1) (match_dup 3))]
 {
@@ -842,8 +868,8 @@
 })
 
 (define_insn "movhi_internal"
-  [(set (match_operand:HI 0 "nonimmed_operand" "=D,D,a,a,a,a,a,U,*a,*A")
-       (match_operand:HI 1 "move_operand" "M,d,r,I,Y,ZY,ZZ,r,*A,*r"))]
+  [(set (match_operand:HI 0 "nonimmed_operand" "=D,D,a,a,a,a,U,*a,*A")
+	(match_operand:HI 1 "move_operand" "M,d,r,I,Y,U,r,*A,*r"))]
   "xtensa_valid_move (HImode, operands)"
   "@
    movi.n\t%0, %x1
@@ -852,13 +878,12 @@
    movi\t%0, %x1
    movi\t%0, %1
    %v1l16ui\t%0, %1
-   ssa8l\t%B1 ; srli\t%0, %B1, 2 ; slli\t%0, %0, 2 ; %v1l32i\t%0, %0, 0 ; srl\t%0, %0 ; extui\t%0, %0, 0, 16
    %v0s16i\t%1, %0
    rsr\t%0, ACCLO
    wsr\t%1, ACCLO"
-  [(set_attr "type"	"move,move,move,move,move,load,load,store,rsr,wsr")
+  [(set_attr "type"	"move,move,move,move,move,load,store,rsr,wsr")
    (set_attr "mode"	"HI")
-   (set_attr "length"	"2,2,3,3,3,3,18,3,3,3")])
+   (set_attr "length"	"2,2,3,3,3,3,3,3,3")])
 
 ;; 8-bit Integer moves
 
@@ -872,8 +897,8 @@
 })
 
 (define_insn "movqi_internal"
-  [(set (match_operand:QI 0 "nonimmed_operand" "=D,D,a,a,a,a,U,*a,*A")
-       (match_operand:QI 1 "move_operand" "M,d,r,I,ZY,ZZ,r,*A,*r"))]
+  [(set (match_operand:QI 0 "nonimmed_operand" "=D,D,a,a,a,U,*a,*A")
+	(match_operand:QI 1 "move_operand" "M,d,r,I,U,r,*A,*r"))]
   "xtensa_valid_move (QImode, operands)"
   "@
    movi.n\t%0, %x1
@@ -881,13 +906,12 @@
    mov\t%0, %1
    movi\t%0, %x1
    %v1l8ui\t%0, %1
-   ssa8l\t%B1 ; srli\t%0, %B1, 2 ; slli\t%0, %0, 2 ; %v1l32i\t%0, %0, 0 ; srl\t%0, %0 ; extui\t%0, %0, 0, 8
    %v0s8i\t%1, %0
    rsr\t%0, ACCLO
    wsr\t%1, ACCLO"
-  [(set_attr "type"	"move,move,move,move,load,load,store,rsr,wsr")
+  [(set_attr "type"	"move,move,move,move,load,store,rsr,wsr")
    (set_attr "mode"	"QI")
-   (set_attr "length"  "2,2,3,3,3,18,3,3,3")])
+   (set_attr "length"	"2,2,3,3,3,3,3,3")])
 
 ;; Sub-word reloads from the constant pool.
 
@@ -1057,7 +1081,7 @@
   "register_operand (operands[0], DFmode)
    || register_operand (operands[1], DFmode)"
   "#"
-  "&& reload_completed"
+  "reload_completed"
   [(set (match_dup 0) (match_dup 2))
    (set (match_dup 1) (match_dup 3))]
 {
@@ -1248,6 +1272,7 @@
 }
   [(set_attr "type"	"jump,jump")
    (set_attr "mode"	"none")
+   (set_attr "condjmp" "cond")
    (set_attr "length"	"3,3")])
 
 (define_insn "*bfalse"
@@ -1263,6 +1288,7 @@
 }
   [(set_attr "type"	"jump,jump")
    (set_attr "mode"	"none")
+   (set_attr "condjmp" "cond")
    (set_attr "length"	"3,3")])
 
 (define_insn "*ubtrue"
@@ -1278,6 +1304,7 @@
 }
   [(set_attr "type"	"jump,jump")
    (set_attr "mode"	"none")
+   (set_attr "condjmp" "cond")
    (set_attr "length"	"3,3")])
 
 (define_insn "*ubfalse"
@@ -1293,6 +1320,7 @@
 }
   [(set_attr "type"	"jump,jump")
    (set_attr "mode"	"none")
+   (set_attr "condjmp" "cond")
    (set_attr "length"	"3,3")])
 
 ;; Branch patterns for bit testing
@@ -1313,6 +1341,7 @@
 }
   [(set_attr "type"	"jump")
    (set_attr "mode"	"none")
+   (set_attr "condjmp" "cond")
    (set_attr "length"	"3")])
 
 (define_insn "*bitfalse"
@@ -1331,6 +1360,7 @@
 }
   [(set_attr "type"	"jump")
    (set_attr "mode"	"none")
+   (set_attr "condjmp" "cond")
    (set_attr "length"	"3")])
 
 (define_insn "*masktrue"
@@ -1352,6 +1382,7 @@
 }
   [(set_attr "type"	"jump")
    (set_attr "mode"	"none")
+   (set_attr "condjmp" "cond")
    (set_attr "length"	"3")])
 
 (define_insn "*maskfalse"
@@ -1373,6 +1404,7 @@
 }
   [(set_attr "type"	"jump")
    (set_attr "mode"	"none")
+   (set_attr "condjmp" "cond")
    (set_attr "length"	"3")])
 
 
@@ -1397,6 +1429,7 @@
   "loop\t%0, %l1_LEND"
   [(set_attr "type"	"jump")
    (set_attr "mode"	"none")
+   (set_attr "condjmp" "cond")
    (set_attr "length"	"3")])
 
 (define_insn "zero_cost_loop_end"
@@ -1433,6 +1466,7 @@
 }
   [(set_attr "type"	"jump")
    (set_attr "mode"	"none")
+   (set_attr "condjmp" "cond")
    (set_attr "length"	"0")])
 
 (define_split
@@ -1630,6 +1664,7 @@
   "j\t%l0"
   [(set_attr "type"	"jump")
    (set_attr "mode"	"none")
+   (set_attr "condjmp" "uncond")
    (set_attr "length"	"3")])
 
 (define_expand "indirect_jump"
@@ -1651,6 +1686,7 @@
   "jx\t%0"
   [(set_attr "type"	"jump")
    (set_attr "mode"	"none")
+   (set_attr "condjmp" "uncond")
    (set_attr "length"	"3")])
 
 
@@ -1680,6 +1716,7 @@
   "jx\t%0"
   [(set_attr "type"	"jump")
    (set_attr "mode"	"none")
+   (set_attr "condjmp" "uncond")
    (set_attr "length"	"3")])
 
 
@@ -1712,6 +1749,7 @@
 }
   [(set_attr "type"	"call")
    (set_attr "mode"	"none")
+   (set_attr "condjmp" "uncond")
    (set_attr "length"	"3")])
 
 (define_expand "call_value"
@@ -1738,6 +1776,7 @@
 }
   [(set_attr "type"	"call")
    (set_attr "mode"	"none")
+   (set_attr "condjmp" "uncond")
    (set_attr "length"	"3")])
 
 (define_insn "entry"
@@ -1761,6 +1800,7 @@
 }
   [(set_attr "type"	"jump")
    (set_attr "mode"	"none")
+   (set_attr "condjmp" "uncond")
    (set_attr "length"	"2")])
 
 
@@ -2047,6 +2087,7 @@
 }
   [(set_attr "type"	"jump")
    (set_attr "mode"	"none")
+   (set_attr "condjmp" "cond")
    (set_attr "length"	"3")])
 
 (define_insn "*boolfalse"
@@ -2065,6 +2106,7 @@
 }
   [(set_attr "type"	"jump")
    (set_attr "mode"	"none")
+   (set_attr "condjmp" "cond")
    (set_attr "length"	"3")])
 
 
