@@ -6962,4 +6962,6 @@ _GLIBCXX_END_NAMESPACE_VERSION
 
 #endif // C++11
 
+#undef __EXCSTR
+
 #endif /* _BASIC_STRING_H */
