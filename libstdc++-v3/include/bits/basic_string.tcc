@@ -41,6 +41,8 @@
 
 #pragma GCC system_header
 
+#define __EXCSTR(s) (__extension__({static const char __exception_what__[] __attribute__((section(".irom.exceptiontext,\"MS\",@progbits,1#"))) = (s); &__exception_what__[0];}))
+
 #include <bits/cxxabi_forced.h>
 
 namespace std _GLIBCXX_VISIBILITY(default)
