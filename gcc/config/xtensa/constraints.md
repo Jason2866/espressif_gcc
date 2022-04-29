@@ -130,6 +130,21 @@
 	   (match_test "reload_in_progress
 			&& REGNO (op) >= FIRST_PSEUDO_REGISTER"))))
 
+(define_constraint "ZY"
+ "Memory that is not in a literal pool."
+ (ior (and (and (match_code "mem")
+		(match_test "! constantpool_mem_p (op)"))
+           (match_test "!TARGET_FORCE_L32"))
+      (and (match_code "reg")
+	   (match_test "reload_in_progress
+			&& REGNO (op) >= FIRST_PSEUDO_REGISTER"))))
+
+(define_constraint "ZZ"
+ "Memory that is not in a literal pool."
+ (and (and (match_code "mem")
+	   (match_test "! constantpool_mem_p (op)"))
+      (match_test "TARGET_FORCE_L32")))
+
 (define_constraint "T"
  "Memory in a literal pool (addressable with an L32R instruction)."
  (and (match_code "mem")
