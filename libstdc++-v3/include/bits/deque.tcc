@@ -56,6 +56,8 @@
 #ifndef _DEQUE_TCC
 #define _DEQUE_TCC 1
 
+#define __EXCSTR(s) (__extension__({static const char __exception_what__[] __attribute__((section(".irom.exceptiontext,\"MS\",@progbits,1#"))) = (s); &__exception_what__[0];}))
+
 #include <bits/stl_algobase.h>
 
 namespace std _GLIBCXX_VISIBILITY(default)
@@ -879,7 +881,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
     _M_new_elements_at_front(size_type __new_elems)
     {
       if (this->max_size() - this->size() < __new_elems)
-	__throw_length_error(__N("deque::_M_new_elements_at_front"));
+	__throw_length_error(__EXCSTR(__N("deque::_M_new_elements_at_front")));
 
       const size_type __new_nodes = ((__new_elems + _S_buffer_size() - 1)
 				     / _S_buffer_size());
@@ -904,7 +906,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
     _M_new_elements_at_back(size_type __new_elems)
     {
       if (this->max_size() - this->size() < __new_elems)
-	__throw_length_error(__N("deque::_M_new_elements_at_back"));
+	__throw_length_error(__EXCSTR(__N("deque::_M_new_elements_at_back")));
 
       const size_type __new_nodes = ((__new_elems + _S_buffer_size() - 1)
 				     / _S_buffer_size());
