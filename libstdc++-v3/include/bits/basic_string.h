@@ -48,6 +48,8 @@
 # include <string_view>
 #endif
 
+#define __EXCSTR(s) (__extension__({static const char __exception_what__[] __attribute__((section(".irom.exceptiontext,\"MS\",@progbits,1#"))) = (s); &__exception_what__[0];}))
+
 namespace std _GLIBCXX_VISIBILITY(default)
 {
 _GLIBCXX_BEGIN_NAMESPACE_VERSION
@@ -1415,7 +1417,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CXX11
       basic_string&
       assign(const basic_string& __str, size_type __pos, size_type __n = npos)
       { return _M_replace(size_type(0), this->size(), __str._M_data()
-			  + __str._M_check(__pos, "basic_string::assign"),
+			  + __str._M_check(__pos, __EXCSTR("basic_string::assign")),
 			  __str._M_limit(__pos, __n)); }
 
       /**
@@ -1675,7 +1677,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CXX11
       insert(size_type __pos1, const basic_string& __str,
 	     size_type __pos2, size_type __n = npos)
       { return this->replace(__pos1, size_type(0), __str._M_data()
-			     + __str._M_check(__pos2, "basic_string::insert"),
+			     + __str._M_check(__pos2, __EXCSTR("basic_string::insert")),
 			     __str._M_limit(__pos2, __n)); }
 
       /**
@@ -1739,7 +1741,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CXX11
       */
       basic_string&
       insert(size_type __pos, size_type __n, _CharT __c)
-      { return _M_replace_aux(_M_check(__pos, "basic_string::insert"),
+      { return _M_replace_aux(_M_check(__pos, __EXCSTR("basic_string::insert")),
 			      size_type(0), __n, __c); }
 
       /**
@@ -4721,7 +4723,7 @@ _GLIBCXX_END_NAMESPACE_CXX11
       basic_string&
       erase(size_type __pos = 0, size_type __n = npos)
       { 
-	_M_mutate(_M_check(__pos, "basic_string::erase"),
+	_M_mutate(_M_check(__pos, __EXCSTR("basic_string::erase")),
 		  _M_limit(__pos, __n), size_type(0));
 	return *this;
       }
@@ -4814,7 +4816,7 @@ _GLIBCXX_END_NAMESPACE_CXX11
       replace(size_type __pos1, size_type __n1, const basic_string& __str,
 	      size_type __pos2, size_type __n2 = npos)
       { return this->replace(__pos1, __n1, __str._M_data()
-			     + __str._M_check(__pos2, "basic_string::replace"),
+			     + __str._M_check(__pos2, __EXCSTR("basic_string::replace")),
 			     __str._M_limit(__pos2, __n2)); }
 
       /**
@@ -4881,7 +4883,7 @@ _GLIBCXX_END_NAMESPACE_CXX11
       */
       basic_string&
       replace(size_type __pos, size_type __n1, size_type __n2, _CharT __c)
-      { return _M_replace_aux(_M_check(__pos, "basic_string::replace"),
+      { return _M_replace_aux(_M_check(__pos, __EXCSTR("basic_string::replace")),
 			      _M_limit(__pos, __n1), __n2, __c); }
 
       /**
@@ -5755,7 +5757,7 @@ _GLIBCXX_END_NAMESPACE_CXX11
       basic_string
       substr(size_type __pos = 0, size_type __n = npos) const
       { return basic_string(*this,
-			    _M_check(__pos, "basic_string::substr"), __n); }
+			    _M_check(__pos, __EXCSTR("basic_string::substr")), __n); }
 
       /**
        *  @brief  Compare to a string.
