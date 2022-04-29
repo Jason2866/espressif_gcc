@@ -2731,6 +2731,8 @@ printx (FILE *file, signed int val)
     fprintf (file, "0x%x", val);
 }
 
+static void
+output_address_base (FILE *file, rtx addr);
 
 void
 print_operand (FILE *file, rtx x, int letter)
@@ -2740,6 +2742,13 @@ print_operand (FILE *file, rtx x, int letter)
 
   switch (letter)
     {
+    case 'B':
+      if (GET_CODE (x) == MEM)
+	output_address_base (file, XEXP (x, 0));
+      else
+	output_operand_lossage ("invalid %%B value");
+      break;
+
     case 'D':
       if (GET_CODE (x) == REG || GET_CODE (x) == SUBREG)
 	fprintf (file, "%s", reg_names[xt_true_regnum (x) + 1]);
@@ -2883,7 +2892,48 @@ print_operand (FILE *file, rtx x, int letter)
 	output_addr_const (file, x);
     }
 }
+ 
+static void
+output_address_base (FILE *file, rtx addr)
+{
+  switch (GET_CODE (addr))
+    {
+    default:
+      fatal_insn ("invalid address", addr);
+      break;
 
+    case REG:
+      fprintf (file, "%s", reg_names [REGNO (addr)]);
+      break;
+
+    case PLUS:
+      {
+	rtx reg = (rtx)0;
+	rtx offset = (rtx)0;
+	rtx arg0 = XEXP (addr, 0);
+	rtx arg1 = XEXP (addr, 1);
+
+	if (GET_CODE (arg0) == REG)
+	  {
+	    reg = arg0;
+	    offset = arg1;
+	  }
+	else if (GET_CODE (arg1) == REG)
+	  {
+	    reg = arg1;
+	    offset = arg0;
+	  }
+	else
+	  fatal_insn ("no register in address", addr);
+
+	if (CONSTANT_P (offset))
+	  fprintf (file, "%s", reg_names [REGNO (reg)]);
+	else
+	  fatal_insn ("address offset not a constant", addr);
+      }
+      break;
+    }
+}
 
 /* A C compound statement to output to stdio stream STREAM the
    assembler syntax for an instruction operand that is a memory
