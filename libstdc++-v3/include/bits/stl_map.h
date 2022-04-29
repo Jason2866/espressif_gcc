@@ -538,7 +538,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       {
 	iterator __i = lower_bound(__k);
 	if (__i == end() || key_comp()(__k, (*__i).first))
-	  __throw_out_of_range(__N("map::at"));
+	  __throw_out_of_range(__EXCSTR(__N("map::at")));
 	return (*__i).second;
       }
 
@@ -547,7 +547,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       {
 	const_iterator __i = lower_bound(__k);
 	if (__i == end() || key_comp()(__k, (*__i).first))
-	  __throw_out_of_range(__N("map::at"));
+	  __throw_out_of_range(__EXCSTR(__N("map::at")));
 	return (*__i).second;
       }
 
@@ -1564,5 +1564,7 @@ _GLIBCXX_END_NAMESPACE_CONTAINER
 
 _GLIBCXX_END_NAMESPACE_VERSION
 } // namespace std
+
+#undef __EXCSTR
 
 #endif /* _STL_MAP_H */
