@@ -2303,19 +2303,6 @@ xtensa_option_override (void)
   if (flag_pic && !flag_pie)
     flag_shlib = 1;
 
-  /* Register machine specific reorg for optional nop insertion to
-     fix psram cache bug on esp32 v0/v1 silicon  */
-  opt_pass *new_pass = make_pass_xtensa_psram_nops (g);
-  struct register_pass_info insert_pass_xtensa_psram_nops =
-    {
-      new_pass,		/* pass */
-      "dbr",			/* reference_pass_name */
-      1,			/* ref_pass_instance_number */
-      PASS_POS_INSERT_AFTER	/* po_op */
-    };
-  register_pass (&insert_pass_xtensa_psram_nops);
-
-
   /* Hot/cold partitioning does not work on this architecture, because of
      constant pools (the load instruction cannot necessarily reach that far).
      Therefore disable it on this architecture.  */
