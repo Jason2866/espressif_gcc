@@ -579,6 +579,7 @@
    extui\t%0, %1, 0, 8
    l8ui\t%0, %1
    ssa8l\t%B1 ; srli\t%0, %B1, 2 ; slli\t%0, %0, 2 ; l32i\t%0, %0, 0 ; srl\t%0, %0 ; extui\t%0, %0, 0, 8"
+  [(set_attr "type"	"arith,load,load")
    (set_attr "mode"	"SI")
    (set_attr "length"	"3,3,18")])
 
