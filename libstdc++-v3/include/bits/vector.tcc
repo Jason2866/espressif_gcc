@@ -69,7 +69,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
     reserve(size_type __n)
     {
       if (__n > this->max_size())
-	__throw_length_error(__EXCSTR(__N("vector::reserve")))
+	__throw_length_error(__EXCSTR(__N("vector::reserve")));
       if (this->capacity() < __n)
 	{
 	  const size_type __old_size = size();
