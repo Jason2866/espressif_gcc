@@ -157,16 +157,3 @@
  (and (and (match_code "mem")
 	   (match_test "! constantpool_mem_p (op)"))
       (match_test "TARGET_FORCE_L32")))
-
-(define_constraint "T"
- "Memory in a literal pool (addressable with an L32R instruction)."
- (and (match_code "mem")
-      (match_test "!TARGET_CONST16 && constantpool_mem_p (op)")))
-
-(define_constraint "U"
- "Memory that is not in a literal pool."
- (ior (and (match_code "mem")
-	   (match_test "! constantpool_mem_p (op)"))
-      (and (match_code "reg")
-	   (match_test "reload_in_progress
-			&& REGNO (op) >= FIRST_PSEUDO_REGISTER"))))
