@@ -1,5 +1,5 @@
 /* Functions for generic Darwin as target machine for GNU C compiler.
-   Copyright (C) 1989-2020 Free Software Foundation, Inc.
+   Copyright (C) 1989-2021 Free Software Foundation, Inc.
    Contributed by Apple Computer Inc.
 
 This file is part of GCC.
@@ -906,9 +906,6 @@ machopic_legitimize_pic_address (rtx orig, machine_mode mode, rtx reg)
 		  emit_move_insn (reg, pic);
 		  pic = reg;
 		}
-#if 0
-	      emit_use (gen_rtx_REG (Pmode, PIC_OFFSET_TABLE_REGNUM));
-#endif
 
 	      if (lra_in_progress && HARD_REGISTER_P (pic))
 		df_set_regs_ever_live (REGNO (pic), true);
@@ -977,9 +974,6 @@ machopic_legitimize_pic_address (rtx orig, machine_mode mode, rtx reg)
 		      emit_move_insn (reg, pic);
 		      pic = reg;
 		    }
-#if 0
-		  emit_use (pic_offset_table_rtx);
-#endif
 
 		  if (lra_in_progress && HARD_REGISTER_P (pic))
 		    df_set_regs_ever_live (REGNO (pic), true);
@@ -991,21 +985,21 @@ machopic_legitimize_pic_address (rtx orig, machine_mode mode, rtx reg)
 	}
 
       if (GET_CODE (pic_ref) != REG)
-        {
-          if (reg != 0)
-            {
-              emit_move_insn (reg, pic_ref);
-              return reg;
-            }
-          else
-            {
-              return force_reg (mode, pic_ref);
-            }
-        }
+	{
+	  if (reg != 0)
+	    {
+	      emit_move_insn (reg, pic_ref);
+	      return reg;
+	    }
+	  else
+	    {
+	      return force_reg (mode, pic_ref);
+	    }
+	}
       else
-        {
-          return pic_ref;
-        }
+	{
+	  return pic_ref;
+	}
     }
   else if (GET_CODE (orig) == PLUS
 	   && (GET_CODE (XEXP (orig, 0)) == MEM
@@ -2224,6 +2218,17 @@ darwin_emit_except_table_label (FILE *file)
   ASM_GENERATE_INTERNAL_LABEL (section_start_label, "GCC_except_table",
 			       except_table_label_num++);
   ASM_OUTPUT_LABEL (file, section_start_label);
+}
+
+rtx
+darwin_make_eh_symbol_indirect (rtx orig, bool ARG_UNUSED (pubvis))
+{
+  if (DARWIN_PPC == 0 && TARGET_64BIT)
+    return orig;
+
+  return gen_rtx_SYMBOL_REF (Pmode,
+			     machopic_indirection_name (orig,
+							/*stub_p=*/false));
 }
 
 /* The unwinders in earlier Darwin versions are based on an old version
@@ -3622,7 +3627,8 @@ darwin_rename_builtins (void)
 }
 
 bool
-darwin_libc_has_function (enum function_class fn_class)
+darwin_libc_has_function (enum function_class fn_class,
+			  tree type ATTRIBUTE_UNUSED)
 {
   if (fn_class == function_sincos)
     return (strverscmp (darwin_macosx_version_min, "10.9") >= 0);

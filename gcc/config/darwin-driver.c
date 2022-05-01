@@ -1,5 +1,5 @@
 /* Additional functions for the GCC driver on Darwin native.
-   Copyright (C) 2006-2020 Free Software Foundation, Inc.
+   Copyright (C) 2006-2021 Free Software Foundation, Inc.
    Contributed by Apple Computer Inc.
 
 This file is part of GCC.
@@ -348,7 +348,7 @@ darwin_driver_init (unsigned int *decoded_options_count,
 	  vers_string =
 	    validate_macosx_version_min ((*decoded_options)[i].arg);
 	  if (vers_string == NULL)
-	    warning (0, "%qs is not valid for %<mmacosx-version-min%>",
+	    warning (0, "%qs is not valid for %<-mmacosx-version-min%>",
 		     (*decoded_options)[i].arg);
 	  else if (vers_string == (*decoded_options)[i].arg)
 	    vers_string = xstrndup ((*decoded_options)[i].arg, 32);

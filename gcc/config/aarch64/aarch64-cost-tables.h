@@ -1,6 +1,6 @@
 /* RTX cost tables for AArch64.
 
-   Copyright (C) 2014-2020 Free Software Foundation, Inc.
+   Copyright (C) 2014-2021 Free Software Foundation, Inc.
 
    This file is part of GCC.
 
@@ -123,7 +123,8 @@ const struct cpu_cost_table qdf24xx_extra_costs =
   },
   /* Vector */
   {
-    COSTS_N_INSNS (1)  /* alu.  */
+    COSTS_N_INSNS (1),  /* alu.  */
+    COSTS_N_INSNS (4)   /* mult.  */
   }
 };
 
@@ -227,7 +228,8 @@ const struct cpu_cost_table thunderx_extra_costs =
   },
   /* Vector */
   {
-    COSTS_N_INSNS (1)	/* Alu.  */
+    COSTS_N_INSNS (1),	/* Alu.  */
+    COSTS_N_INSNS (4)	/* mult.  */
   }
 };
 
@@ -330,7 +332,8 @@ const struct cpu_cost_table thunderx2t99_extra_costs =
   },
   /* Vector */
   {
-    COSTS_N_INSNS (1)	/* Alu.  */
+    COSTS_N_INSNS (1),	/* Alu.  */
+    COSTS_N_INSNS (4)	/* Mult.  */
   }
 };
 
@@ -433,7 +436,8 @@ const struct cpu_cost_table thunderx3t110_extra_costs =
   },
   /* Vector */
   {
-    COSTS_N_INSNS (1)	/* Alu.  */
+    COSTS_N_INSNS (1),	/* Alu.  */
+    COSTS_N_INSNS (4)	/* Mult.  */
   }
 };
 
@@ -537,7 +541,8 @@ const struct cpu_cost_table tsv110_extra_costs =
   },
   /* Vector */
   {
-    COSTS_N_INSNS (1)  /* alu.  */
+    COSTS_N_INSNS (1),  /* alu.  */
+    COSTS_N_INSNS (4)   /* mult.  */
   }
 };
 
@@ -640,7 +645,8 @@ const struct cpu_cost_table a64fx_extra_costs =
   },
   /* Vector */
   {
-    COSTS_N_INSNS (1)  /* alu.  */
+    COSTS_N_INSNS (1),  /* alu.  */
+    COSTS_N_INSNS (4)   /* mult.  */
   }
 };
 

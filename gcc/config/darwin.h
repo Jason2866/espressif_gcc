@@ -1,5 +1,5 @@
 /* Target definitions for Darwin (Mac OS X) systems.
-   Copyright (C) 1989-2020 Free Software Foundation, Inc.
+   Copyright (C) 1989-2021 Free Software Foundation, Inc.
    Contributed by Apple Computer Inc.
 
 This file is part of GCC.
@@ -135,7 +135,7 @@ extern GTY(()) int darwin_ms_struct;
 "%{shared:-Zdynamiclib} %<shared",					\
 "%{static:%{Zdynamic:%e conflicting code gen style switches are used}}",\
 "%{y*:%nthe y option is obsolete and ignored} %<y*",			\
-"%<Mach %<X"
+"%<Mach "
 
 #if LD64_HAS_EXPORT_DYNAMIC
 #define DARWIN_RDYNAMIC "%{rdynamic:-export_dynamic}"
@@ -238,7 +238,7 @@ extern GTY(()) int darwin_ms_struct;
     DARWIN_NOPIE_SPEC \
     DARWIN_RDYNAMIC \
     DARWIN_NOCOMPACT_UNWIND \
-    "}}}}}}} %<pie %<no-pie %<rdynamic "
+    "}}}}}}} %<pie %<no-pie %<rdynamic %<X "
 
 #define DSYMUTIL "\ndsymutil"
 
@@ -497,8 +497,8 @@ extern GTY(()) int darwin_ms_struct;
 #define ASM_FINAL_SPEC \
   "%{gsplit-dwarf:%ngsplit-dwarf is not supported on this platform} %<gsplit-dwarf"
 
-/* Since we bootstrap with C++ toolchains realistically require DWARF-2, even
-   if stabs is supported by the assembler.  */
+/* We now require C++11 to bootstrap and newer tools than those based on
+   stabs, so require DWARF-2, even if stabs is supported by the assembler.  */
 
 #define PREFERRED_DEBUGGING_TYPE DWARF2_DEBUG
 #define DARWIN_PREFER_DWARF
@@ -610,6 +610,9 @@ extern GTY(()) int darwin_ms_struct;
 
 /* Emit a label to separate the exception table.  */
 #define TARGET_ASM_EMIT_EXCEPT_TABLE_LABEL darwin_emit_except_table_label
+
+/* Make an EH (personality or LDSA) symbol indirect as needed.  */
+#define TARGET_ASM_MAKE_EH_SYMBOL_INDIRECT darwin_make_eh_symbol_indirect
 
 /* Some of Darwin's unwinders need current frame address state to be reset
    after a DW_CFA_restore_state recovers the register values.  */
@@ -1096,16 +1099,20 @@ extern void darwin_driver_init (unsigned int *,struct cl_decoded_option **);
 /* Later versions of ld64 support coalescing weak code/data without requiring
    that they be placed in specially identified sections.  This is the earliest
    _tested_ version known to support this so far.  */
-#define MIN_LD64_NO_COAL_SECTS "236.4"
+#define MIN_LD64_NO_COAL_SECTS "236.3"
 
 /* From at least version 62.1, ld64 can build symbol indirection stubs as
    needed, and there is no need for the compiler to emit them.  */
 #define MIN_LD64_OMIT_STUBS "62.1"
 
+/* If we have no definition for the linker version, pick the minimum version
+   that will bootstrap the compiler.  */
 #ifndef LD64_VERSION
-#define LD64_VERSION "62.1"
-#else
-#define DEF_LD64 LD64_VERSION
+# ifndef  DEF_LD64
+#  define LD64_VERSION "85.2.1"
+# else
+#  define LD64_VERSION DEF_LD64
+# endif
 #endif
 
 #endif /* CONFIG_DARWIN_H */
