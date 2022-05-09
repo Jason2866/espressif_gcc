@@ -1,5 +1,5 @@
 /* Connect implementation
-   Copyright (C) 2014-2020 Free Software Foundation, Inc.
+   Copyright (C) 2014-2021 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -21,6 +21,7 @@ along with GCC; see the file COPYING3.  If not see
 #include <string>
 #include <unistd.h>
 #include <sys/types.h>
+#include <sys/select.h>
 #include <string.h>
 #include <errno.h>
 #include "marshall.hh"

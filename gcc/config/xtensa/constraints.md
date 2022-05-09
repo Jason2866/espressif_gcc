@@ -1,5 +1,5 @@
 ;; Constraint definitions for Xtensa.
-;; Copyright (C) 2006-2020 Free Software Foundation, Inc.
+;; Copyright (C) 2006-2022 Free Software Foundation, Inc.
 ;;
 ;; This file is part of GCC.
 ;;
@@ -142,3 +142,18 @@
       (and (match_code "reg")
 	   (match_test "reload_in_progress
 			&& REGNO (op) >= FIRST_PSEUDO_REGISTER"))))
+
+(define_constraint "ZY"
+ "Memory that is not in a literal pool."
+ (ior (and (and (match_code "mem")
+		(match_test "! constantpool_mem_p (op)"))
+           (match_test "!TARGET_FORCE_L32"))
+      (and (match_code "reg")
+	   (match_test "reload_in_progress
+			&& REGNO (op) >= FIRST_PSEUDO_REGISTER"))))
+
+(define_constraint "ZZ"
+ "Memory that is not in a literal pool."
+ (and (and (match_code "mem")
+	   (match_test "! constantpool_mem_p (op)"))
+      (match_test "TARGET_FORCE_L32")))

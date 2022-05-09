@@ -1,5 +1,5 @@
 /* Subroutines for insn-output.c for Tensilica's Xtensa architecture.
-   Copyright (C) 2001-2020 Free Software Foundation, Inc.
+   Copyright (C) 2001-2021 Free Software Foundation, Inc.
    Contributed by Bob Wilson (bwilson@tensilica.com) at Tensilica.
 
 This file is part of GCC.
@@ -55,6 +55,9 @@ along with GCC; see the file COPYING3.  If not see
 #include "dumpfile.h"
 #include "hw-doloop.h"
 #include "rtl-iter.h"
+#include "tree-pass.h"
+#include "context.h"
+#include "insn-attr.h"
 
 /* This file should be included last.  */
 #include "target-def.h"
@@ -183,8 +186,12 @@ static unsigned int xtensa_hard_regno_nregs (unsigned int, machine_mode);
 static bool xtensa_hard_regno_mode_ok (unsigned int, machine_mode);
 static bool xtensa_modes_tieable_p (machine_mode, machine_mode);
 static HOST_WIDE_INT xtensa_constant_alignment (const_tree, HOST_WIDE_INT);
+static bool xtensa_can_eliminate (const int from ATTRIBUTE_UNUSED,
+				  const int to);
 static HOST_WIDE_INT xtensa_starting_frame_offset (void);
 static unsigned HOST_WIDE_INT xtensa_asan_shadow_offset (void);
+
+static rtx xtensa_delegitimize_address (rtx);
 
 
 
@@ -271,7 +278,7 @@ static unsigned HOST_WIDE_INT xtensa_asan_shadow_offset (void);
 #define TARGET_SECONDARY_RELOAD xtensa_secondary_reload
 
 #undef TARGET_HAVE_TLS
-#define TARGET_HAVE_TLS (TARGET_THREADPTR && HAVE_AS_TLS)
+#define TARGET_HAVE_TLS HAVE_AS_TLS
 
 #undef TARGET_CANNOT_FORCE_CONST_MEM
 #define TARGET_CANNOT_FORCE_CONST_MEM xtensa_cannot_force_const_mem
@@ -324,6 +331,9 @@ static unsigned HOST_WIDE_INT xtensa_asan_shadow_offset (void);
 #undef TARGET_CONSTANT_ALIGNMENT
 #define TARGET_CONSTANT_ALIGNMENT xtensa_constant_alignment
 
+#undef TARGET_CAN_ELIMINATE
+#define TARGET_CAN_ELIMINATE xtensa_can_eliminate
+
 #undef TARGET_STARTING_FRAME_OFFSET
 #define TARGET_STARTING_FRAME_OFFSET xtensa_starting_frame_offset
 
@@ -332,6 +342,9 @@ static unsigned HOST_WIDE_INT xtensa_asan_shadow_offset (void);
 
 #undef TARGET_HAVE_SPECULATION_SAFE_VALUE
 #define TARGET_HAVE_SPECULATION_SAFE_VALUE speculation_safe_value_not_needed
+
+#undef TARGET_DELEGITIMIZE_ADDRESS
+#define TARGET_DELEGITIMIZE_ADDRESS xtensa_delegitimize_address
 
 struct gcc_target targetm = TARGET_INITIALIZER;
 
@@ -592,7 +605,7 @@ constantpool_mem_p (rtx op)
 static bool
 xtensa_tls_symbol_p (rtx x)
 {
-  if (! TARGET_HAVE_TLS)
+  if (! targetm.have_tls)
     return false;
 
   return GET_CODE (x) == SYMBOL_REF && SYMBOL_REF_TLS_MODEL (x) != 0;
@@ -1072,6 +1085,22 @@ xtensa_emit_move_sequence (rtx *operands, machine_mode mode)
 
       if (! TARGET_AUTO_LITPOOLS && ! TARGET_CONST16)
 	{
+	  /* Try to emit MOVI + SLLI sequence, that is smaller
+	     than L32R + literal.  */
+	  if (optimize_size && mode == SImode && CONST_INT_P (src)
+	      && register_operand (dst, mode))
+	    {
+	      HOST_WIDE_INT srcval = INTVAL (src);
+	      int shift = ctz_hwi (srcval);
+
+	      if (xtensa_simm12b (srcval >> shift))
+		{
+		  emit_move_insn (dst, GEN_INT (srcval >> shift));
+		  emit_insn (gen_ashlsi3_internal (dst, dst, GEN_INT (shift)));
+		  return 1;
+		}
+	    }
+
 	  src = force_const_mem (SImode, src);
 	  operands[1] = src;
 	}
@@ -1838,7 +1867,8 @@ xtensa_legitimate_address_p (machine_mode mode, rtx addr, bool strict)
     return true;
 
   /* Check for "register + offset" addressing.  */
-  if (GET_CODE (addr) == PLUS)
+  if (GET_CODE (addr) == PLUS &&
+      (!TARGET_FORCE_L32 || (mode != HImode && mode != QImode)))
     {
       rtx xplus0 = XEXP (addr, 0);
       rtx xplus1 = XEXP (addr, 1);
@@ -2015,7 +2045,7 @@ xtensa_mode_dependent_address_p (const_rtx addr,
 bool
 xtensa_tls_referenced_p (rtx x)
 {
-  if (! TARGET_HAVE_TLS)
+  if (! targetm.have_tls)
     return false;
 
   subrtx_iterator::array_type array;
@@ -2202,12 +2232,17 @@ xtensa_return_in_msb (const_tree valtype)
 	  && int_size_in_bytes (valtype) >= UNITS_PER_WORD);
 }
 
-
 static void
 xtensa_option_override (void)
 {
   int regno;
   machine_mode mode;
+
+  if (xtensa_windowed_abi == -1)
+    xtensa_windowed_abi = TARGET_WINDOWED_ABI_DEFAULT;
+
+  if (! TARGET_THREADPTR)
+    targetm.have_tls = false;
 
   /* Use CONST16 in the absence of L32R.
      Set it in the TARGET_OPTION_OVERRIDE to avoid dependency on xtensa
@@ -2355,6 +2390,8 @@ printx (FILE *file, signed int val)
     fprintf (file, "0x%x", val);
 }
 
+static void
+output_address_base (FILE *file, rtx addr);
 
 void
 print_operand (FILE *file, rtx x, int letter)
@@ -2364,6 +2401,13 @@ print_operand (FILE *file, rtx x, int letter)
 
   switch (letter)
     {
+    case 'B':
+      if (GET_CODE (x) == MEM)
+	output_address_base (file, XEXP (x, 0));
+      else
+	output_operand_lossage ("invalid %%B value");
+      break;
+
     case 'D':
       if (GET_CODE (x) == REG || GET_CODE (x) == SUBREG)
 	fprintf (file, "%s", reg_names[xt_true_regnum (x) + 1]);
@@ -2507,7 +2551,48 @@ print_operand (FILE *file, rtx x, int letter)
 	output_addr_const (file, x);
     }
 }
+ 
+static void
+output_address_base (FILE *file, rtx addr)
+{
+  switch (GET_CODE (addr))
+    {
+    default:
+      fatal_insn ("invalid address", addr);
+      break;
 
+    case REG:
+      fprintf (file, "%s", reg_names [REGNO (addr)]);
+      break;
+
+    case PLUS:
+      {
+	rtx reg = (rtx)0;
+	rtx offset = (rtx)0;
+	rtx arg0 = XEXP (addr, 0);
+	rtx arg1 = XEXP (addr, 1);
+
+	if (GET_CODE (arg0) == REG)
+	  {
+	    reg = arg0;
+	    offset = arg1;
+	  }
+	else if (GET_CODE (arg1) == REG)
+	  {
+	    reg = arg1;
+	    offset = arg0;
+	  }
+	else
+	  fatal_insn ("no register in address", addr);
+
+	if (CONSTANT_P (offset))
+	  fprintf (file, "%s", reg_names [REGNO (reg)]);
+	else
+	  fatal_insn ("address offset not a constant", addr);
+      }
+      break;
+    }
+}
 
 /* A C compound statement to output to stdio stream STREAM the
    assembler syntax for an instruction operand that is a memory
@@ -4255,7 +4340,10 @@ hwloop_optimize (hwloop_info loop)
     {
       while (DEBUG_INSN_P (entry_after)
              || (NOTE_P (entry_after)
-		 && NOTE_KIND (entry_after) != NOTE_INSN_BASIC_BLOCK))
+                 && NOTE_KIND (entry_after) != NOTE_INSN_BASIC_BLOCK
+         /* Make sure we don't split a call and its corresponding
+            CALL_ARG_LOCATION note.  */
+                 && NOTE_KIND (entry_after) != REG_CALL_ARG_LOCATION))
         entry_after = PREV_INSN (entry_after);
 
       emit_insn_after (seq, entry_after);
@@ -4406,6 +4494,17 @@ xtensa_constant_alignment (const_tree exp, HOST_WIDE_INT align)
   return align;
 }
 
+static bool
+xtensa_can_eliminate (const int from ATTRIBUTE_UNUSED, const int to)
+{
+  gcc_assert (from == ARG_POINTER_REGNUM || from == FRAME_POINTER_REGNUM);
+
+  /* If we need a frame pointer, ARG_POINTER_REGNUM and FRAME_POINTER_REGNUM
+     can only eliminate to HARD_FRAME_POINTER_REGNUM.  */
+  return to == HARD_FRAME_POINTER_REGNUM
+    || (!frame_pointer_needed && to == STACK_POINTER_REGNUM);
+}
+
 /* Implement TARGET_STARTING_FRAME_OFFSET.  */
 
 static HOST_WIDE_INT
@@ -4422,6 +4521,25 @@ static unsigned HOST_WIDE_INT
 xtensa_asan_shadow_offset (void)
 {
   return HOST_WIDE_INT_UC (0x10000000);
+}
+
+static rtx
+xtensa_delegitimize_address (rtx op)
+{
+  switch (GET_CODE (op))
+    {
+    case CONST:
+      return xtensa_delegitimize_address (XEXP (op, 0));
+
+    case UNSPEC:
+      if (XINT (op, 1) == UNSPEC_PLT)
+	return XVECEXP(op, 0, 0);
+      break;
+
+    default:
+      break;
+    }
+  return op;
 }
 
 #include "gt-xtensa.h"

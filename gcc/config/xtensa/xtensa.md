@@ -162,11 +162,14 @@
 
 (define_insn "*addx"
   [(set (match_operand:SI 0 "register_operand" "=a")
-	(plus:SI (mult:SI (match_operand:SI 1 "register_operand" "r")
-			  (match_operand:SI 3 "addsubx_operand" "i"))
+	(plus:SI (ashift:SI (match_operand:SI 1 "register_operand" "r")
+			    (match_operand:SI 3 "addsubx_operand" "i"))
 		 (match_operand:SI 2 "register_operand" "r")))]
   "TARGET_ADDX"
-  "addx%3\t%0, %1, %2"
+{
+  operands[3] = GEN_INT (1 << INTVAL (operands[3]));
+  return "addx%3\t%0, %1, %2";
+}
   [(set_attr "type"	"arith")
    (set_attr "mode"	"SI")
    (set_attr "length"	"3")])
@@ -196,11 +199,14 @@
 
 (define_insn "*subx"
   [(set (match_operand:SI 0 "register_operand" "=a")
-	(minus:SI (mult:SI (match_operand:SI 1 "register_operand" "r")
-			   (match_operand:SI 3 "addsubx_operand" "i"))
+	(minus:SI (ashift:SI (match_operand:SI 1 "register_operand" "r")
+			     (match_operand:SI 3 "addsubx_operand" "i"))
 		  (match_operand:SI 2 "register_operand" "r")))]
   "TARGET_ADDX"
-  "subx%3\t%0, %1, %2"
+{
+  operands[3] = GEN_INT (1 << INTVAL (operands[3]));
+  return "subx%3\t%0, %1, %2";
+}
   [(set_attr "type"	"arith")
    (set_attr "mode"	"SI")
    (set_attr "length"	"3")])
@@ -463,6 +469,27 @@
 })
 
 
+;; Byte swap.
+
+(define_insn "bswapsi2"
+  [(set (match_operand:SI 0 "register_operand" "=&a")
+	(bswap:SI (match_operand:SI 1 "register_operand" "r")))]
+  "!optimize_size"
+  "ssai\t8\;srli\t%0, %1, 16\;src\t%0, %0, %1\;src\t%0, %0, %0\;src\t%0, %1, %0"
+  [(set_attr "type"	"arith")
+   (set_attr "mode"	"SI")
+   (set_attr "length"	"15")])
+
+(define_insn "bswapdi2"
+  [(set (match_operand:DI 0 "register_operand" "=&a")
+	(bswap:DI (match_operand:DI 1 "register_operand" "r")))]
+  "!optimize_size"
+  "ssai\t8\;srli\t%0, %D1, 16\;src\t%0, %0, %D1\;src\t%0, %0, %0\;src\t%0, %D1, %0\;srli\t%D0, %1, 16\;src\t%D0, %D0, %1\;src\t%D0, %D0, %D0\;src\t%D0, %1, %D0"
+  [(set_attr "type"	"arith")
+   (set_attr "mode"	"DI")
+   (set_attr "length"	"27")])
+
+
 ;; Negation and one's complement.
 
 (define_insn "negsi2"
@@ -533,26 +560,28 @@
 ;; Zero-extend instructions.
 
 (define_insn "zero_extendhisi2"
-  [(set (match_operand:SI 0 "register_operand" "=a,a")
-	(zero_extend:SI (match_operand:HI 1 "nonimmed_operand" "r,U")))]
+  [(set (match_operand:SI 0 "register_operand" "=a,a,a")
+	(zero_extend:SI (match_operand:HI 1 "nonimmed_operand" "r,ZY,ZZ")))]
   ""
   "@
    extui\t%0, %1, 0, 16
-   %v1l16ui\t%0, %1"
-  [(set_attr "type"	"arith,load")
+   %v1l16ui\t%0, %1
+   ssa8l\t%B1 ; srli\t%0, %B1, 2 ; slli\t%0, %0, 2 ; l32i\t%0, %0, 0 ; srl\t%0, %0 ; extui\t%0, %0, 0, 16"
+  [(set_attr "type"	"arith,load,load")
    (set_attr "mode"	"SI")
-   (set_attr "length"	"3,3")])
+   (set_attr "length"	"3,3,18")])
 
 (define_insn "zero_extendqisi2"
-  [(set (match_operand:SI 0 "register_operand" "=a,a")
-	(zero_extend:SI (match_operand:QI 1 "nonimmed_operand" "r,U")))]
+  [(set (match_operand:SI 0 "register_operand" "=a,a,a")
+	(zero_extend:SI (match_operand:QI 1 "nonimmed_operand" "r,ZY,ZZ")))]
   ""
   "@
    extui\t%0, %1, 0, 8
-   %v1l8ui\t%0, %1"
-  [(set_attr "type"	"arith,load")
+   l8ui\t%0, %1
+   ssa8l\t%B1 ; srli\t%0, %B1, 2 ; slli\t%0, %0, 2 ; l32i\t%0, %0, 0 ; srl\t%0, %0 ; extui\t%0, %0, 0, 8"
+  [(set_attr "type"	"arith,load,load")
    (set_attr "mode"	"SI")
-   (set_attr "length"	"3,3")])
+   (set_attr "length"	"3,3,18")])
 
 
 ;; Sign-extend instructions.
@@ -570,15 +599,16 @@
 })
 
 (define_insn "extendhisi2_internal"
-  [(set (match_operand:SI 0 "register_operand" "=B,a")
-	(sign_extend:SI (match_operand:HI 1 "sext_operand" "r,U")))]
+  [(set (match_operand:SI 0 "register_operand" "=B,a,a")
+	(sign_extend:SI (match_operand:HI 1 "sext_operand" "r,r,ZY")))]
   ""
   "@
    sext\t%0, %1, 15
+   slli\t%0, %1, 16 ; srai\t%0, %0, 16
    %v1l16si\t%0, %1"
-  [(set_attr "type"	"arith,load")
+  [(set_attr "type"	"arith,arith,load")
    (set_attr "mode"	"SI")
-   (set_attr "length"	"3,3")])
+   (set_attr "length"	"3,6,3")])
 
 (define_expand "extendqisi2"
   [(set (match_operand:SI 0 "register_operand" "")
@@ -721,8 +751,23 @@
 	(match_operand:DI 1 "general_operand" ""))]
   ""
 {
-  if (CONSTANT_P (operands[1]) && !TARGET_CONST16)
-    operands[1] = force_const_mem (DImode, operands[1]);
+  if (CONSTANT_P (operands[1]))
+    {
+      /* Split in halves if 64-bit Const-to-Reg moves
+	 because of offering further optimization opportunities.  */
+      if (register_operand (operands[0], DImode))
+	{
+	  rtx first, second;
+
+	  split_double (operands[1], &first, &second);
+	  emit_insn (gen_movsi (gen_lowpart (SImode, operands[0]), first));
+	  emit_insn (gen_movsi (gen_highpart (SImode, operands[0]), second));
+	  DONE;
+	}
+
+      if (!TARGET_CONST16)
+	operands[1] = force_const_mem (DImode, operands[1]);
+    }
 
   if (!register_operand (operands[0], DImode)
       && !register_operand (operands[1], DImode))
@@ -798,8 +843,8 @@
 })
 
 (define_insn "movhi_internal"
-  [(set (match_operand:HI 0 "nonimmed_operand" "=D,D,a,a,a,a,U,*a,*A")
-	(match_operand:HI 1 "move_operand" "M,d,r,I,Y,U,r,*A,*r"))]
+  [(set (match_operand:HI 0 "nonimmed_operand" "=D,D,a,a,a,a,a,U,*a,*A")
+	(match_operand:HI 1 "move_operand" "M,d,r,I,Y,ZY,ZZ,r,*A,*r"))]
   "xtensa_valid_move (HImode, operands)"
   "@
    movi.n\t%0, %x1
@@ -808,12 +853,13 @@
    movi\t%0, %x1
    movi\t%0, %1
    %v1l16ui\t%0, %1
+   ssa8l\t%B1 ; srli\t%0, %B1, 2 ; slli\t%0, %0, 2 ; %v1l32i\t%0, %0, 0 ; srl\t%0, %0 ; extui\t%0, %0, 0, 16
    %v0s16i\t%1, %0
    rsr\t%0, ACCLO
    wsr\t%1, ACCLO"
-  [(set_attr "type"	"move,move,move,move,move,load,store,rsr,wsr")
+  [(set_attr "type"	"move,move,move,move,move,load,load,store,rsr,wsr")
    (set_attr "mode"	"HI")
-   (set_attr "length"	"2,2,3,3,3,3,3,3,3")])
+   (set_attr "length"	"2,2,3,3,3,3,18,3,3,3")])
 
 ;; 8-bit Integer moves
 
@@ -827,8 +873,8 @@
 })
 
 (define_insn "movqi_internal"
-  [(set (match_operand:QI 0 "nonimmed_operand" "=D,D,a,a,a,U,*a,*A")
-	(match_operand:QI 1 "move_operand" "M,d,r,I,U,r,*A,*r"))]
+  [(set (match_operand:QI 0 "nonimmed_operand" "=D,D,a,a,a,a,U,*a,*A")
+	(match_operand:QI 1 "move_operand" "M,d,r,I,ZY,ZZ,r,*A,*r"))]
   "xtensa_valid_move (QImode, operands)"
   "@
    movi.n\t%0, %x1
@@ -836,12 +882,13 @@
    mov\t%0, %1
    movi\t%0, %x1
    %v1l8ui\t%0, %1
+   ssa8l\t%B1 ; srli\t%0, %B1, 2 ; slli\t%0, %0, 2 ; %v1l32i\t%0, %0, 0 ; srl\t%0, %0 ; extui\t%0, %0, 0, 8
    %v0s8i\t%1, %0
    rsr\t%0, ACCLO
    wsr\t%1, ACCLO"
-  [(set_attr "type"	"move,move,move,move,load,store,rsr,wsr")
+  [(set_attr "type"	"move,move,move,move,load,load,store,rsr,wsr")
    (set_attr "mode"	"QI")
-   (set_attr "length"	"2,2,3,3,3,3,3,3")])
+   (set_attr "length"  "2,2,3,3,3,18,3,3,3")])
 
 ;; Sub-word reloads from the constant pool.
 
@@ -1050,6 +1097,16 @@
   operands[1] = xtensa_copy_incoming_a7 (operands[1]);
 })
 
+(define_insn "*ashlsi3_1"
+  [(set (match_operand:SI 0 "register_operand" "=a")
+	(ashift:SI (match_operand:SI 1 "register_operand" "r")
+		   (const_int 1)))]
+  "TARGET_DENSITY"
+  "add.n\t%0, %1, %1"
+  [(set_attr "type"	"arith")
+   (set_attr "mode"	"SI")
+   (set_attr "length"	"2")])
+
 (define_insn "ashlsi3_internal"
   [(set (match_operand:SI 0 "register_operand" "=a,a")
 	(ashift:SI (match_operand:SI 1 "register_operand" "r,r")
@@ -1062,6 +1119,17 @@
    (set_attr "mode"	"SI")
    (set_attr "length"	"3,6")])
 
+(define_insn "*ashlsi3_3x"
+  [(set (match_operand:SI 0 "register_operand" "=a")
+	(ashift:SI (match_operand:SI 1 "register_operand" "r")
+		   (ashift:SI (match_operand:SI 2 "register_operand" "r")
+			      (const_int 3))))]
+  ""
+  "ssa8b\t%2\;sll\t%0, %1"
+  [(set_attr "type"	"arith")
+   (set_attr "mode"	"SI")
+   (set_attr "length"	"6")])
+
 (define_insn "ashrsi3"
   [(set (match_operand:SI 0 "register_operand" "=a,a")
 	(ashiftrt:SI (match_operand:SI 1 "register_operand" "r,r")
@@ -1073,6 +1141,17 @@
   [(set_attr "type"	"arith,arith")
    (set_attr "mode"	"SI")
    (set_attr "length"	"3,6")])
+
+(define_insn "*ashrsi3_3x"
+  [(set (match_operand:SI 0 "register_operand" "=a")
+	(ashiftrt:SI (match_operand:SI 1 "register_operand" "r")
+		     (ashift:SI (match_operand:SI 2 "register_operand" "r")
+				(const_int 3))))]
+  ""
+  "ssa8l\t%2\;sra\t%0, %1"
+  [(set_attr "type"	"arith")
+   (set_attr "mode"	"SI")
+   (set_attr "length"	"6")])
 
 (define_insn "lshrsi3"
   [(set (match_operand:SI 0 "register_operand" "=a,a")
@@ -1092,6 +1171,17 @@
   [(set_attr "type"	"arith,arith")
    (set_attr "mode"	"SI")
    (set_attr "length"	"3,6")])
+
+(define_insn "*lshrsi3_3x"
+  [(set (match_operand:SI 0 "register_operand" "=a")
+	(lshiftrt:SI (match_operand:SI 1 "register_operand" "r")
+		     (ashift:SI (match_operand:SI 2 "register_operand" "r")
+				(const_int 3))))]
+  ""
+  "ssa8l\t%2\;srl\t%0, %1"
+  [(set_attr "type"	"arith")
+   (set_attr "mode"	"SI")
+   (set_attr "length"	"6")])
 
 (define_insn "rotlsi3"
   [(set (match_operand:SI 0 "register_operand" "=a,a")

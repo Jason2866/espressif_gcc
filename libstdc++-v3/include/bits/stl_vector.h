@@ -68,6 +68,8 @@
 
 #include <debug/assertions.h>
 
+#define __EXCSTR(s) (__extension__({static const char __exception_what__[] __attribute__((section(".irom.exceptiontext,\"MS\",@progbits,1#"))) = (s); &__exception_what__[0];}))
+
 #if _GLIBCXX_SANITIZE_STD_ALLOCATOR && _GLIBCXX_SANITIZE_VECTOR
 extern "C" void
 __sanitizer_annotate_contiguous_container(const void*, const void*,
@@ -1981,5 +1983,7 @@ _GLIBCXX_END_NAMESPACE_CONTAINER
 
 _GLIBCXX_END_NAMESPACE_VERSION
 } // namespace std
+
+#undef __EXCSTR
 
 #endif /* _STL_VECTOR_H */
